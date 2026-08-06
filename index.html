@@ -207,6 +207,15 @@ label{display:block; font-size:12.5px; letter-spacing:.1em; text-transform:upper
 input[type=text]{width:100%; font:inherit; font-size:16px; padding:11px; background:var(--bg2);
   color:var(--ink); border:1px solid var(--line); border-radius:8px}
 input[type=text]:focus{outline:none; border-color:var(--gold)}
+/* Save Data row (import/export) — same tokens as input[type=text]/.pick, just
+   applied to the two native controls that don't get styling by default. */
+input[type=file]{display:block; width:100%; max-width:100%; font:inherit; font-size:13px;
+  color:var(--ink-dim); background:var(--bg2); border:1px solid var(--line); border-radius:8px;
+  padding:10px}
+input[type=file]:focus{outline:none; border-color:var(--gold)}
+textarea{width:100%; font:inherit; font-size:12.5px; padding:10px; background:var(--bg2);
+  color:var(--ink); border:1px solid var(--line); border-radius:8px; resize:vertical}
+textarea:focus{outline:none; border-color:var(--gold)}
 
 .wywa{border-color:var(--gold)}
 .wywa ul{margin:8px 0 0; padding-left:18px; font-size:13.5px}
@@ -2708,8 +2717,19 @@ function arriveInZone(S){
   // hashPick, not pick() — this call site has never spent an rng() draw, and
   // this is a display-only choice among equally-valid flavor lines, so it
   // stays that way. See the comment on hashPick() and on ARRIVAL above.
-  const variants = ARRIVAL[n][S.world.thread.antagonistType];
-  const text = hashPick(variants, S.hero.name + "#" + n);
+  // Defensive on BOTH lookups. A save can reach here with world.thread null
+  // (created before Phase 6 added threads, or hand-edited/imported) or with an
+  // antagonistType that isn't a key in this table. Either one used to throw a
+  // TypeError out of advance() — and because runCatchUp()'s step had no
+  // try/catch, that killed the setTimeout chain and left the player stuck on
+  // the "Catching Up" screen forever with catchupBusy stuck true. ARRIVAL_LEGACY
+  // already existed for the chronicle's chapter matching; it is the right
+  // fallback here too.
+  const type = S.world.thread && S.world.thread.antagonistType;
+  const variants = (type && ARRIVAL[n] && ARRIVAL[n][type]) || null;
+  const text = variants && variants.length
+    ? hashPick(variants, S.hero.name + "#" + n)
+    : ARRIVAL_LEGACY[n];
   logEvent(S, "zone", fillTemplate(text, threadVars(S)), 2, {zone: n});
 }
 
@@ -3619,6 +3639,188 @@ function migrate(s){
   return s;
 }
 
+/* ------------------------------ import/export ----------------------------- */
+// One export file carries BOTH localStorage keys (see CLAUDE.md "Save" — they
+// are deliberately separate so a corrupt hero never wipes lifetime progress,
+// but that means an export has to bundle both or a restore would silently
+// lose everything except the current hero). Render/persistence layer only —
+// nothing here touches the simulation core.
+
+const EXPORT_MARKER = "chronicles-rpg-save-v1";
+
+function buildExportPayload(){
+  if (S) saveGame();     // flush the freshest in-memory hero before reading it back
+  saveMeta();
+  let heroRaw = null, metaRaw = null;
+  try { heroRaw = localStorage.getItem(SAVE_KEY); } catch(e){}
+  try { metaRaw = localStorage.getItem(META_KEY); } catch(e){}
+  let hero = null, meta = defaultMeta();
+  try { if (heroRaw) hero = JSON.parse(heroRaw); } catch(e){}
+  try { if (metaRaw) meta = JSON.parse(metaRaw); } catch(e){}
+  return {
+    marker: EXPORT_MARKER,
+    exportedAt: Date.now(),   // file metadata for a human/filesystem, not a chronicle stamp — fine outside the sim core
+    saveVersion: SAVE_VERSION,
+    metaVersion: META_VERSION,
+    hero,                      // null when exported from the creation screen with no live hero
+    meta,
+  };
+}
+
+function exportGameData(){
+  const payload = buildExportPayload();
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], {type: "application/json"});
+  const url = URL.createObjectURL(blob);
+  const d = new Date();
+  const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `chronicles-rpg-save-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Mirrors loadGame()'s own hero-shape check (hero/world objects + a known
+// race/cls) so a bad import is rejected the same way a corrupt localStorage
+// save already is — validated BEFORE anything is written.
+function validateImportPayload(obj){
+  if (!obj || typeof obj !== "object" || Array.isArray(obj))
+    return "That doesn't look like a Chronicles RPG save file.";
+  if (obj.marker !== EXPORT_MARKER)
+    return "That doesn't look like a Chronicles RPG save file.";
+  if (obj.hero !== null && obj.hero !== undefined){
+    const h = obj.hero;
+    if (!h || typeof h !== "object" || !h.hero || typeof h.hero !== "object" ||
+        !h.world || typeof h.world !== "object")
+      return "The save file's hero data is incomplete or corrupted.";
+    if (!RACES[h.hero.race] || !CLASSES[h.hero.cls])
+      return "The save file's hero has a race or class this version doesn't recognize.";
+  }
+  if (obj.meta !== null && obj.meta !== undefined &&
+      (typeof obj.meta !== "object" || Array.isArray(obj.meta)))
+    return "The save file's lifetime progress data is corrupted.";
+  return null;   // valid
+}
+
+// A validated-but-not-yet-applied import. Gates render() ahead of every other
+// screen (metaView, hero state, creation) so the confirm works no matter
+// where the file was dropped from — the creation screen included.
+let importConfirmPayload = null;
+
+function renderImportConfirm(){
+  const payload = importConfirmPayload;
+  const incoming = payload.hero
+    ? `${esc(payload.hero.hero.name)}, level ${payload.hero.hero.level} ${esc(CLASSES[payload.hero.hero.cls].name)}`
+    : "no hero";
+  const current = S ? `${esc(S.hero.name)}, level ${S.hero.level} ${esc(CLASSES[S.hero.cls].name)}` : "no hero";
+  const hallCount = payload.meta && Array.isArray(payload.meta.hall) ? payload.meta.hall.length : 0;
+  const achCount = payload.meta && Array.isArray(payload.meta.achievements) ? payload.meta.achievements.length : 0;
+  app.innerHTML = `
+    <div class="modal"><div class="card">
+      <h2>Import Save Data?</h2>
+      <p class="muted tiny">This replaces the current hero (${current}) and ALL lifetime progress —
+        achievements, the Hall of Legends, graves, everything — with what's in the file: ${incoming},
+        ${hallCount} Hall ${hallCount === 1 ? "entry" : "entries"}, ${achCount} earned
+        achievement${achCount === 1 ? "" : "s"}. This cannot be undone.</p>
+      <button class="btn" id="import-confirm" style="margin-top:14px">Yes, Replace Everything</button>
+      <button class="btn ghost" id="import-cancel" style="margin-top:8px">Never Mind</button>
+    </div></div>`;
+  document.getElementById("import-confirm").addEventListener("click", () => applyImportPayload(payload));
+  document.getElementById("import-cancel").addEventListener("click", () => {
+    importConfirmPayload = null; render();
+  });
+}
+
+function applyImportPayload(payload){
+  let prevHeroRaw = null, prevMetaRaw = null;
+  try { prevHeroRaw = localStorage.getItem(SAVE_KEY); } catch(e){}
+  try { prevMetaRaw = localStorage.getItem(META_KEY); } catch(e){}
+  try {
+    if (payload.hero) localStorage.setItem(SAVE_KEY, JSON.stringify(payload.hero));
+    else localStorage.removeItem(SAVE_KEY);
+    localStorage.setItem(META_KEY, JSON.stringify(payload.meta || defaultMeta()));
+  } catch(e){
+    // Best-effort rollback — a failed write must not leave storage half-written.
+    try {
+      if (prevHeroRaw != null) localStorage.setItem(SAVE_KEY, prevHeroRaw); else localStorage.removeItem(SAVE_KEY);
+      if (prevMetaRaw != null) localStorage.setItem(META_KEY, prevMetaRaw);
+    } catch(e2){}
+    importConfirmPayload = null;
+    render();
+    showImportError("Could not write the import — storage may be full. Nothing was changed.");
+    return;
+  }
+  // Disarm beforeunload's re-save of the OLD in-memory state before navigating
+  // away (see CLAUDE.md "Testing without corrupting a save" — this exact class
+  // of bug has bitten the project twice). Reloading hands off cleanly to the
+  // normal boot path, which runs the imported data through migrate()/
+  // migrateMeta() exactly like any other load.
+  S = null;
+  importConfirmPayload = null;
+  location.reload();
+}
+
+function showImportError(msg){
+  const el = document.getElementById("import-error");
+  if (el) el.textContent = msg;
+}
+
+function tryImportText(text){
+  showImportError("");
+  let obj;
+  try { obj = JSON.parse(text); }
+  catch(e){ showImportError("That file isn't valid JSON — it may be truncated or damaged."); return; }
+  const err = validateImportPayload(obj);
+  if (err){ showImportError(err); return; }
+  importConfirmPayload = obj;
+  render();
+}
+
+// The bottom-of-screen utility row ("very bottom", quiet, .btn.ghost, well
+// separated from gameplay controls). Shared by renderMain() and
+// renderCreation() so import works with or without a live hero.
+function saveDataRow(){
+  return `
+    <div class="card" style="margin-top:4px">
+      <h2>Save Data</h2>
+      <p class="tiny muted" style="margin:0 0 10px">Export saves the current hero and all lifetime
+        progress to a file. Import replaces both with a previously exported file.</p>
+      <button class="btn ghost" id="export-save" type="button">Export Save Data</button>
+      <label for="import-file">Import Save Data</label>
+      <input type="file" id="import-file" accept="application/json,.json">
+      <details style="margin-top:12px">
+        <summary class="tiny muted" style="cursor:pointer">Paste a save instead</summary>
+        <textarea id="import-paste" rows="4" placeholder="Paste exported save JSON here" style="margin-top:8px"></textarea>
+        <button class="btn ghost" id="import-paste-btn" type="button" style="margin-top:8px">Import Pasted Save</button>
+      </details>
+      <div id="import-error" class="tiny" style="margin-top:10px; min-height:1em; color:var(--blood)"></div>
+    </div>`;
+}
+function wireSaveDataRow(){
+  const exportBtn = document.getElementById("export-save");
+  if (exportBtn) exportBtn.addEventListener("click", () => {
+    try { exportGameData(); } catch(e){ showImportError("Export failed — nothing was written."); }
+  });
+  const fileInput = document.getElementById("import-file");
+  if (fileInput) fileInput.addEventListener("change", (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = "";   // allow re-selecting the same filename later
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => tryImportText(String(reader.result));
+    reader.onerror = () => showImportError("Could not read that file.");
+    reader.readAsText(file);
+  });
+  const pasteBtn = document.getElementById("import-paste-btn");
+  if (pasteBtn) pasteBtn.addEventListener("click", () => {
+    const ta = document.getElementById("import-paste");
+    tryImportText(ta ? ta.value : "");
+  });
+}
+
 /* --------------------------- offline catch-up ---------------------------- */
 // Rob's call (2026-08-01): on hitting a blocking choice we BANK the unspent
 // time rather than discarding it. Resolving the choice spends the remainder,
@@ -3634,8 +3836,26 @@ function runCatchUp(totalMs, done){
   let remaining = totalMs;
 
   function step(){
-    const offer = Math.min(chunkMs, remaining);
-    const left  = advance(S, offer);
+    // The whole batch runs inside a try. Without it, ANY throw from the
+    // simulation core escapes the setTimeout chain: no further step is
+    // scheduled, catchupBusy stays true (which also disables the live loop),
+    // and the last thing painted — the "Catching Up" card — is on screen
+    // permanently with no way out. That exact hang shipped once, from an
+    // unguarded thread lookup in arriveInZone(). A crash mid-catch-up should
+    // cost the player the rest of the batch, never the session.
+    let offer, left;
+    try {
+      offer = Math.min(chunkMs, remaining);
+      left  = advance(S, offer);
+    } catch (err){
+      console.error("catch-up aborted", err);
+      catchupBusy = false;
+      S.world.bankedMs = 0;   // don't re-run the same crashing span on next load
+      S.lastTick = Date.now();
+      try { saveGame(); } catch(e){}
+      done("error", Math.max(0, totalMs - remaining));
+      return;
+    }
     remaining -= (offer - left);
     if (left > 0){                       // blocked — hold the rest
       S.world.bankedMs = remaining;
@@ -3779,6 +3999,7 @@ let retireConfirmOpen = false;
 let prologueSeen = false;
 
 function render(){
+  if (importConfirmPayload){ renderImportConfirm(); return; }
   if (metaView === "hall"){ renderHall(); return; }
   if (metaView === "achievements"){ renderAchievements(); return; }
   if (!S){
@@ -3870,9 +4091,11 @@ function renderCreation(){
         </button>`).join("")}
       </div>
       <button class="btn" id="begin" disabled style="margin-top:8px">Begin the adventure</button>
-    </div>`;
+    </div>
+    ${saveDataRow()}`;
 
   wireMetaNav();
+  wireSaveDataRow();
   let chosen = null;
   const nameEl = document.getElementById("hname");
   const beginEl = document.getElementById("begin");
@@ -4319,7 +4542,8 @@ function renderMain(){
       ${["stats","skills","gear","chronicle"].map(t =>
         `<button data-tab="${t}" aria-selected="${t===activeTab}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("")}
     </div>
-    <div class="card" id="tabbody">${tabBody()}</div>`;
+    <div class="card" id="tabbody">${tabBody()}</div>
+    ${saveDataRow()}`;
 
   wireMetaNav();
   app.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
@@ -4330,6 +4554,7 @@ function renderMain(){
   const retireBtn = document.getElementById("retire-btn");
   if (retireBtn) retireBtn.addEventListener("click", () => { retireConfirmOpen = true; render(); });
   wireChronicleFilters();
+  wireSaveDataRow();
 }
 function pct(a, b){ return Math.max(0, Math.min(100, (a / b) * 100)).toFixed(1) + "%"; }
 
@@ -4846,6 +5071,11 @@ window.GQ = {
   GRAVE_MAX, trimGraves, GRAVE_FIND_CHANCE, GRAVE_HEIRLOOM_CHANCE,
   GRAVE_EPITAPHS, GRAVE_HEIRLOOM_LINES, bestGearItem, eligibleGraves,
   graveVars, generateHeirloom, rollGraveDiscovery, hallGraveLine,
+  // Save data import/export (2026-08-05 brief) — render/persistence layer only.
+  EXPORT_MARKER, buildExportPayload, exportGameData, validateImportPayload,
+  applyImportPayload, tryImportText, renderImportConfirm,
+  get importConfirmPayload(){ return importConfirmPayload; },
+  set importConfirmPayload(v){ importConfirmPayload = v; },
   get metaView(){ return metaView; }, set metaView(v){ metaView = v; },
   get retireConfirmOpen(){ return retireConfirmOpen; }, set retireConfirmOpen(v){ retireConfirmOpen = v; },
   get catchupBusy(){ return catchupBusy; },   // verification surface: is a runCatchUp() chain still mid-flight?
