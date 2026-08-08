@@ -193,6 +193,22 @@ h1,h2,h3{font-family:Cinzel,Georgia,serif; font-weight:700; margin:0}
 .ach-bar-label span:last-child{white-space:nowrap; font-variant-numeric:tabular-nums}
 .ach-lineage{font-size:11px; letter-spacing:.1em; text-transform:uppercase;
   color:var(--ink-mute); margin:10px 0 5px}
+
+/* Save Data card — collapsible from the title, closed by default (Rob,
+   2026-08-07). The whole element is a <details> standing in for the usual
+   .card div, and <summary> stands in for .card h2 (same font/tracking/color)
+   so the section reads identically to every other card until it's tapped
+   open. Reuses the .ach-progress +/- disclosure language rather than the
+   browser's default triangle. */
+details.save-data > summary{cursor:pointer; list-style:none; display:flex;
+  align-items:center; justify-content:space-between; gap:8px;
+  font-size:15px; letter-spacing:.12em; text-transform:uppercase; color:var(--head);
+  -webkit-tap-highlight-color:transparent}
+details.save-data > summary::-webkit-details-marker{display:none}
+details.save-data > summary::after{content:"+"; font-family:Cinzel,serif; font-size:18px;
+  line-height:1; color:var(--ink-mute)}
+details.save-data[open] > summary::after{content:"\2212"}
+details.save-data[open] > summary{margin-bottom:10px}
 .ach-lineage:first-child{margin-top:0}
 .ach-chiprow{display:flex; flex-wrap:wrap; gap:6px}
 .ach-chiprow .chip{cursor:default}
@@ -299,8 +315,8 @@ html, body{overflow-x:hidden; max-width:100%}
 
 const SAVE_KEY = "goquest_hero";
 const META_KEY = "goquest_meta";
-const SAVE_VERSION = 8;
-const META_VERSION = 3;
+const SAVE_VERSION = 9;
+const META_VERSION = 4;
 
 const TASK_DURATION   = 25;      // seconds, before STR reduction
 const TRAVEL_SECONDS  = 90;      // zone change
@@ -528,6 +544,15 @@ const ADVANCED_OF = {
   apprentice: ["wizard","sorcerer","warlock","alchemist"],
 };
 
+// Maps every class (tier 1 AND tier 2) back to its tier-1 lineage — hoisted
+// here (was rebuilt locally inside simulate()) so achievement bookkeeping
+// (ascendAllLineages) and the harness's byClass table share one definition.
+const LINEAGE_OF = {};
+for (const t1 of Object.keys(ADVANCED_OF)){
+  LINEAGE_OF[t1] = t1;
+  for (const t2 of ADVANCED_OF[t1]) LINEAGE_OF[t2] = t1;
+}
+
 /* --------------------------------- skills --------------------------------- */
 // A small set of effect KINDS rather than bespoke code per skill (design doc
 // §8). `SKILLS` is the flavor+effect registry; `SKILL_POOLS` decides which
@@ -708,7 +733,18 @@ const TASKS = {
      "Standing first watch at a crossroads camp","Gathering kindling before the rain comes",
      "Chasing crows out of the seed rows","Fording the millpond at first light",
      "Mapping a new trail around the bog","Splinting a woodcutter's broken arm",
-     "Trading words with a tinker who won't meet anyone's eyes","Helping raise a barn before the frost"],
+     "Trading words with a tinker who won't meet anyone's eyes","Helping raise a barn before the frost",
+     "Waiting out a hailstorm under a lean-to","Counting sheep twice because the tally keeps coming up short",
+     "Sharing bread with a plowman who won't take payment","Listening to a peddler's news that's three weeks stale",
+     "Watching the mist burn off the low fields at dawn","Resetting a fence post the frost heaved loose",
+     "Carrying a message between two farms that stopped speaking","Helping haul a stuck cart out of the ford",
+     "Noting a second moon-ring nobody else seems to see","Trading a whittled toy for a hot meal",
+     "Watching a hawk circle the same field three days running","Standing witness at a boundary dispute over a hedge",
+     "Following a wagon rut that doesn't lead anywhere on the map","Sheltering a lamb born too early in the season",
+     "Repairing a scarecrow the crows have stopped fearing","Counting the days since the mill last turned",
+     "Walking a widow's fence line so she doesn't have to","Noticing the well water tastes of iron this week",
+     "Helping thresh the last of the barley before the rain","Sitting with an old dog too tired to walk the whole round",
+     "Reading a letter aloud for someone who never learned to","Watching lightning walk the ridge without a single drop of rain"],
   2:["Cutting a path through the briar wall","Burning out a spider nest","Standing watch at the March gate",
      "Following a trail of black sap","Hunting the wolf that took the miller's boy","Prying a rusted seal from a stump-door",
      "Fording the Thorn at dusk","Answering a horn in the deep wood",
@@ -717,7 +753,18 @@ const TASKS = {
      "Following crow-calls to a fresh kill site","Sealing a den before dusk finds it first",
      "Escorting a woodward past the wolf-line","Reading a warning carved into bark",
      "Hunting the source of a smell no one names","Setting a watch over a burial not yet finished",
-     "Following footprints that circle back on themselves","Clearing a fallen tree from the March road"],
+     "Following footprints that circle back on themselves","Clearing a fallen tree from the March road",
+     "Counting wolf tracks that circle back on themselves twice","Listening to the March go quiet all at once",
+     "Finding a snare sprung with nothing caught in it","Following a trail of feathers with no bird at the end of it",
+     "Sharing a fire with a woodcutter who won't say what's being run from","Marking trees that keep losing their marks overnight",
+     "Waiting out a fog that smells wrong for the season","Helping a trapper who's stopped trusting the traps set only yesterday",
+     "Reading claw-marks too high on the bark to explain","Standing watch while a grave gets re-covered properly",
+     "Following crow-song that doesn't match any crow","Cutting a path around a clearing nobody will cross",
+     "Listening for a horn that never quite finishes sounding","Helping bury what the wolves left of a trapline",
+     "Trading a lantern for a warning better heeded than paid for","Finding a boot with no story attached to it",
+     "Watching briar grow back across a path cleared yesterday","Standing over a den that's gone quiet in the wrong way",
+     "Following a set of tracks that stop mid-stride, no explanation","Resetting a watch-fire that keeps going out at the same hour",
+     "Counting the graves along the March road that shouldn't be marked yet","Sharing the road with a pilgrim who won't say where they're bound"],
   3:["Descending a flooded stair","Reading names off a drowned lintel","Putting down a barrow-wight",
      "Draining a collapsed antechamber","Following a lantern that isn't there","Breaking a grave-seal",
      "Wading the black cistern","Counting doors that weren't there yesterday",
@@ -726,7 +773,18 @@ const TASKS = {
      "Reading a warning scratched into wet stone","Putting down something that used to be a priest",
      "Bailing water from a sinking gallery","Following echoes that answer a beat too late",
      "Resetting a ward that's gone quiet","Wading past bones stacked with purpose",
-     "Testing a floor that sounds hollow underfoot","Closing a door that keeps opening itself"],
+     "Testing a floor that sounds hollow underfoot","Closing a door that keeps opening itself",
+     "Bailing a gallery that refills faster than it drains","Reading a name off a coffin lid that matches no family record",
+     "Listening to water move where there's no current to move it","Following a line of handprints pressed into wet stone",
+     "Resetting candles that keep drowning in their own wax","Counting doors along a passage that shouldn't have this many",
+     "Wading past an altar still warm despite the flood","Reading a prayer scratched backward into the stone",
+     "Following the sound of digging that stops when approached","Charting a stair that descends further than the Barrows should go",
+     "Standing over a seal that hums faintly underfoot","Finding a lantern still lit after six centuries underwater",
+     "Listening to a bell that hasn't been rung, ring anyway","Wading a nave where the water runs uphill",
+     "Reading the last entry in a drowned physician's ledger","Following footprints that only appear underwater",
+     "Resetting a ward that keeps slipping loose overnight","Counting bones stacked in a pattern too deliberate for accident",
+     "Standing witness while a coffin reseals itself","Wading past a mirror the water somehow hasn't clouded",
+     "Following a cold draft to a wall with no opening in it","Reading names off a wall that keeps adding one more"],
   4:["Crossing a bridge of cooling slag","Dousing an ember-hound","Climbing the cinder stair",
      "Bargaining with a smoke-speaker","Hauling ore from a burning seam","Cutting through a wall of standing flame",
      "Sheltering from an ashfall","Silencing a bell that rings itself",
@@ -735,7 +793,18 @@ const TASKS = {
      "Reinforcing a bridge before the next tremor","Trading for passage with something half-formed of smoke",
      "Putting down an ember-hound's whole litter","Charting a path around a lake of slag",
      "Salvaging tools from a foundry no one claims","Standing watch while the ground finishes cooling",
-     "Silencing a forge-bell that won't stay quiet","Crossing ground that's still deciding whether to hold"],
+     "Silencing a forge-bell that won't stay quiet","Crossing ground that's still deciding whether to hold",
+     "Watching a forge relight itself an hour before dawn","Cooling a stretch of ground still too hot to stand on",
+     "Listening to iron sing in a fire nobody's tending","Following a smoke trail that thins and thickens on no wind",
+     "Bargaining passage past a foundry that never stopped working","Watching cinders fall upward for longer than makes sense",
+     "Standing clear of a bell tower still ringing from the inside","Charting a new fissure that opened overnight",
+     "Hauling a miner's tools out of a shaft gone too warm to enter","Reading a foundry ledger with entries dated after the fire",
+     "Watching ash settle into shapes that hold for a moment too long","Following a seam of ore that pulses like a heartbeat",
+     "Sheltering behind a wall still warm from a battle nobody remembers","Listening to a forge-bell count something that isn't hours",
+     "Standing over a vent that breathes instead of simply venting","Watching slag cool into a shape too deliberate to be an accident",
+     "Trading with a smoke-speaker for directions that keep shifting","Reading scorch marks that spell out something in an old alphabet",
+     "Cutting a path around a lake of slag still settling","Following hoofprints burned into solid stone",
+     "Watching the cinder stair rebuild itself overnight","Standing witness while a foundry bell rings for no one"],
   5:["Walking a horizon with no landmark","Digging out a buried caravan","Outlasting a grey storm",
      "Following bootprints that end mid-stride","Rationing the last of the water","Killing something that was praying",
      "Crossing the glass flats at noon","Burying what the wind uncovered",
@@ -744,7 +813,18 @@ const TASKS = {
      "Rationing shade as carefully as water","Crossing a stretch that swallowed the last three maps",
      "Trading a canteen for a story worth hearing","Outwaiting a storm with no clear edge",
      "Following a caravan track to its last wheel","Reading bones for which way the water went",
-     "Standing still while the ash decides which way to fall","Marking a route for whoever crosses next"],
+     "Standing still while the ash decides which way to fall","Marking a route for whoever crosses next",
+     "Rationing shade under a sky with nowhere to hide from it","Watching a dust devil hold its shape too long to be wind alone",
+     "Following a compass needle that points somewhere other than north","Digging a marker out before the ash claims it again",
+     "Listening to the wind carry words in no language anyone knows","Crossing ground still warm from something that isn't the sun",
+     "Counting the days since the last landmark matched the map","Watching a mirage hold steady long after it should have broken",
+     "Sharing the last of the water with a stranger going the other way","Reading a route scratched into a canteen with no owner left to claim it",
+     "Following bootprints that predate the last sandstorm","Waiting out a wind that never settles on one direction",
+     "Watching the horizon hold a shape that shouldn't still be standing","Marking a cairn for whoever crosses this stretch next",
+     "Listening to sand move under stone that shouldn't shift at all","Crossing a caravan track that ends without a single wreck to explain it",
+     "Digging out a wheel with no wagon left attached to it","Watching ash fall upward off the edge of a dune",
+     "Following a trail that the wind erases exactly as fast as it's made","Standing over bones bleached paler than the ash around them",
+     "Rationing water against a thirst that doesn't feel entirely earned","Watching the storm on the horizon that never quite arrives, or leaves"],
   6:["Climbing the fractured spire","Holding a stair against the tide","Cutting down a crowned thing",
      "Reading the last page of a burning book","Walking the seam where the sky split","Breaking a siege of one",
      "Answering the voice in the crown","Standing where the world comes apart",
@@ -753,7 +833,18 @@ const TASKS = {
      "Reading the last words of someone who almost won","Standing where the ground argues with itself",
      "Silencing something that used to be a bell","Walking a bridge that exists only sometimes",
      "Breaking a ward built to outlast kingdoms","Answering a voice that already knows the hero's name",
-     "Holding ground the maps don't have a name for","Standing at the last door before the crown"],
+     "Holding ground the maps don't have a name for","Standing at the last door before the crown",
+     "Climbing a stair that exists only when looked at directly","Listening to the Crown's split stone argue with itself",
+     "Standing where gravity forgets which way is down for a moment","Reading a name carved fresh into stone that's stood a thousand years",
+     "Watching a banner burn that was already ash the day before","Crossing ground that remembers being a battlefield and won't forget",
+     "Holding a line against something that hasn't decided to attack yet","Following a voice that finishes sentences before they're spoken",
+     "Standing where the sky shows through the mountain itself","Watching the last free garrison hold a wall that isn't there anymore",
+     "Reading the final page of a book still writing itself","Climbing past a floor that used to be a ceiling",
+     "Listening to a bell toll backward through its own last ring","Standing at a door that opens onto the same room, again",
+     "Watching the Crown's shadow fall the wrong direction at noon","Crossing a bridge that remembers being whole",
+     "Holding ground the maps stopped naming generations ago","Reading the last words of a defender who almost held it",
+     "Watching something ancient choose, finally, to notice","Standing where the world's argument with itself gets loudest",
+     "Climbing toward a light that isn't sunrise and isn't fire","Answering silence that answers back, eventually"],
 };
 
 // Zone arrivals, keyed [zone][antagonistType], 2 variants each — the most-
@@ -787,6 +878,10 @@ const ARRIVAL = {
       "{name} takes the road because the shrine at the crossroads has stood cold for a week, and the woman who tends it won't say why beyond a single word: {antagonist}.",
       "The Hollow's birds have gone quiet three mornings running. {name} walks out anyway, under a sky that doesn't look wrong exactly — just watched.",
     ],
+    hunt: [
+      "{name} leaves the Hollow to a horn sounding somewhere past the treeline — too far to place, too close to ignore. The old folk call it {antagonist}, and won't say much else before changing the subject.",
+      "The Hollow's dogs won't settle the night before {name} leaves, all of them facing the same direction at once. Something out there has been running things down since before the Hollow had a name — {antagonist}, if the stories are even half true.",
+    ],
   },
   2: {
     lich: [
@@ -808,6 +903,10 @@ const ARRIVAL = {
     god: [
       "The Thornwood's oldest shrine has gone silent under its canopy, and {name} feels the absence before understanding it — {antagonist}'s attention, settling somewhere close.",
       "{name} passes a hedge-chapel where every candle gutters at once despite no wind at all. Whatever did that, the locals only call it {antagonist}, and look away fast.",
+    ],
+    hunt: [
+      "{name} finds a stag run dead in a dead-straight line through the Thornwood, no turns, no stumbles — {antagonist}'s work, the woodwards say, and mean it as a warning.",
+      "The March keeps hearing horns where no huntsman rides. {name} counts three now, each one closer than the last, each one bearing down on something with {antagonist}'s patience.",
     ],
   },
   3: {
@@ -831,6 +930,10 @@ const ARRIVAL = {
       "{name} wades into a Barrow shrine older than any record, and finds a warning scratched beneath the altar in a hand shaking with fear of {antagonist}.",
       "The flooded dark here holds something that answers when spoken to, in a voice that knows {antagonist}'s name better than {name} does yet.",
     ],
+    hunt: [
+      "{name} finds antlers driven into a Barrow doorway like a marker, the bone beneath them older than the tomb it's nailed to. {antagonist} has been keeping trophies down here since before the water rose.",
+      "The flooded dark holds hoofprints that shouldn't cross water this deep without sinking. {name} follows them anyway, because {antagonist} clearly did, and didn't stop to wonder either.",
+    ],
   },
   4: {
     lich: [
@@ -852,6 +955,10 @@ const ARRIVAL = {
     god: [
       "Emberfall Reach glows from below, and {name} feels {antagonist}'s attention here the way you'd feel a held breath — patient, total, and not yet spent.",
       "{name} finds a foundry bell that rings itself on no schedule anyone can explain. {antagonist}'s doing, probably, though probably is doing a great deal of work in that sentence.",
+    ],
+    hunt: [
+      "{name} crosses Emberfall to the sound of hounds that never seem to get closer or farther — just always, exactly, three ridges back. {antagonist}'s pack, keeping pace on purpose.",
+      "The Reach's cinder trails are scored with claw-and-hoof tracks running matched, stride for stride, toward something that never got the chance to look back. {antagonist} doesn't hunt carelessly.",
     ],
   },
   5: {
@@ -875,6 +982,10 @@ const ARRIVAL = {
       "The Ashen Wastes take a day to cross and remember everyone who tries. {name} can feel {antagonist} out there now, patient as the ash itself.",
       "{name} crosses ground gone quiet in a way that isn't peace — {antagonist}'s attention, settling over the Wastes long before {name} arrives to meet it.",
     ],
+    hunt: [
+      "The Ashen Wastes take a day to cross, and {name} spends every hour of it certain of being paced, just out of sight, by something with {antagonist}'s patience and none of its hurry.",
+      "{name} finds a horn half-buried in ash, still faintly warm despite everything else out here having gone cold generations ago. {antagonist} isn't in any hurry. {antagonist} has never needed to be.",
+    ],
   },
   6: {
     lich: [
@@ -896,6 +1007,10 @@ const ARRIVAL = {
     god: [
       "The Riven Crown stands split against the sky, and the split itself might be {antagonist}'s doing, or its wound, or both. This is where it ends, one way or another.",
       "{name} climbs toward a silence with a shape to it, {antagonist} waiting somewhere inside it — patient, old, and finally close enough to answer.",
+    ],
+    hunt: [
+      "The Riven Crown stands split against the sky, and {antagonist}'s horns have finally stopped sounding — not because the chase ended, {name} realizes, but because the quarry finally arrived on its own.",
+      "{name} climbs toward ground littered with older trophies than the Crown itself, {antagonist} waiting at the top the way anything patient enough eventually gets to.",
     ],
   },
 };
@@ -952,13 +1067,33 @@ const PERILS = {
 const DODGE_TAGS = [
   "but they're already moving.", "and finds only air.", "a hair too late.",
   "they're a step ahead of it.", "and it costs them nothing.",
+  "but the blow finds nothing to land on.", "and lives to keep walking.",
+  "close enough to feel the air move.", "and the moment passes.",
+  "a half-step ahead of it.", "and it isn't quick enough to catch them.",
+  "but the ground doesn't hold what it was aiming for.",
 ];
 
 const CHEATDEATH_LINES = [
   "It should have ended there. Something refuses to let {name} go, and they claw back to a single breath.",
   "{name} goes down — and comes back up. Barely. One breath, held.",
   "The dark takes {name} and then, impossibly, lets go — survival, on a single breath.",
+  "For a moment {name} isn't breathing at all. Then, somehow, breathing resumes.",
+  "The blow should have finished it. Something in {name} disagrees, loudly enough to matter.",
 ];
+// Bonus cheat-death variants, unlocked by the fiftyHeroesRun achievement
+// (meta.unlocks.cheatDeathVeteran) — a nod to a player who's watched a great
+// many heroes come this close before. cheatDeathPool() below appends these
+// to the base bank rather than replacing it, and only when S._meta carries
+// the flag, so simulate(n) (meta always null) always draws from the
+// unmodified base CHEATDEATH_LINES array, same as before this change.
+const CHEATDEATH_VETERAN_LINES = [
+  "{name} has been this close to the edge before, in a manner of speaking — through other eyes, other names. The body remembers the trick of stepping back from it anyway.",
+  "Not the first time someone has clawed back from exactly this. {name} does it out of what almost looks like practice.",
+];
+function cheatDeathPool(S){
+  return (S._meta && S._meta.unlocks && S._meta.unlocks.cheatDeathVeteran)
+    ? CHEATDEATH_LINES.concat(CHEATDEATH_VETERAN_LINES) : CHEATDEATH_LINES;
+}
 
 // Graves & heirlooms (persistent world, 2026-08-03 brief). A fallen hero's
 // grave is recorded into goquest_meta (see renderDeath's "Lay Them to Rest"
@@ -987,6 +1122,17 @@ const GRAVE_HEIRLOOM_LINES = [
   "The grave gives up one more thing before {finder} leaves it: {owner}'s {itemName}, ready to be carried again.",
   "{finder} almost doesn't see it in the dirt — {owner}'s {itemName}, exactly where it was dropped and never recovered. {finder} takes it because leaving it feels like leaving a debt unpaid.",
   "Whatever else the grave keeps, it gives up {owner}'s {itemName} without a fight. {finder} carries it onward, which is more than anyone's done for it in longer than {finder} wants to guess.",
+];
+
+// tenHeroesRest achievement reward (meta.unlocks.graveSense) — see
+// applyGraveSenseAtCreation() below. Distinct framing from GRAVE_EPITAPHS:
+// those are a hero STUMBLING onto a marker mid-run; this is foreknowledge,
+// carried in from the very first step, so the tense and register both shift
+// from discovery to recollection.
+const GRAVE_SENSE_LINES = [
+  "Before the first mile, {finder} already carries a name worth carrying: {name}, {article} {race} {cls} who reached level {level} and fell in {zone}. {cause}. Word travels, even to heroes who haven't left home yet.",
+  "{finder} sets out already knowing where one road ended — {name}'s, {article} {race} {cls}, level {level}, {zone}. {cause}. Not a story told at the grave. A story carried to it.",
+  "There's a name {finder} has known since before this road began: {name}, level {level}, {article} {race} {cls}, who came as far as {zone} and no further. {cause}. {finder} means to walk past that marker knowing exactly whose it is.",
 ];
 
 // Epilogue templates for the death screen. ctx fields arrive pre-escaped.
@@ -1180,7 +1326,52 @@ const ANTAGONIST_TYPES = {
             "a bell that rings a note no instrument nearby can match",
             "pilgrims arriving at a shrine that hasn't existed in a hundred years"],
   },
+  // Sixth antagonist type (Thrice Proven achievement reward, meta.unlocks.
+  // antagonistHunt) — a pursuit-horror flavor distinct from the original
+  // five: not a place to reach or a body to fight so much as a chase that's
+  // been running the whole time. Written to the same depth as the base five
+  // (firsts/epithets/goals/dooms/signs here, plus its own ARRIVAL/ACT_MAJOR/
+  // ANTAGONIST_ENCOUNTER/ACT4_FAILURE/CONFRONTATION_* entries below) so it
+  // reads as a sixth genre, not a stub. See rollThread() — this type is only
+  // ever drawn when the achievement is unlocked; ANTAGONIST_TYPE_KEYS_BASE
+  // (the original five, in their original order) is what simulate(n) uses,
+  // so adding this entry costs the seeded harness zero extra rng() draws.
+  hunt: {
+    firsts: ["Kaelnor","Rothvain","Sorvain","Aldreth","Vaunt","Threnn","Corvath","Ashgrim",
+             "Dunmarrow","Skorrath","Wrenmoor","Halvard","Ossandril","Greymantle"],
+    epithets: ["the Horned Rider","the Long Chase","Never-Resting","the Nine Horns","Bloodtrail",
+               "the Last Hunt","Houndmaster","the Unwearied","Old Quarry-Keeper","the Endless Chase",
+               "Antlered","the Tireless","Whipcrack","the Wolf's Own"],
+    nameFmt: (f,e) => `${f} the ${e}`,
+    goals: ["run every free thing in the land to ground","claim the one hunt that's eluded it since before the first horn was carved",
+            "finish a chase begun three generations back, no less patient now","add one more head to a trophy wall longer than any hall",
+            "run the last free herd into ground it's already claimed","finish what the first horn-call started, generations back",
+            "collect the one quarry that's never once looked back and lived",
+            "prove the chase never truly ends, only changes prey",
+            "empty the wild of everything still fast enough to be worth chasing"],
+    dooms: ["there will be nothing left running free to chase","the horns will sound until nobody's left to hear them stop",
+            "every road will become a chase with only one ending","the hunt will not end until the hunt is all there is",
+            "nobody will get to simply walk anywhere, ever again",
+            "the pack will grow by exactly the number of people who thought they could outrun it",
+            "stillness itself will start to feel like being watched",
+            "the wild places will empty out ahead of the horns, not behind them",
+            "there will be no ground left that isn't someone's hunting ground"],
+    signs: ["hoofprints that don't match anything that still has hooves","a horn sounded three ridges off, then one ridge off, then closer",
+            "hounds baying in a language that isn't quite baying","a trophy nailed to a way-shrine that wasn't there yesterday",
+            "livestock run to death in a dead straight line, no turns","a hunting horn found buried, still faintly warm",
+            "grass laid flat in a chase-line that goes on for miles",
+            "a whole village that's stopped going out after dusk, all at once",
+            "claw-and-hoof tracks running alongside each other, matched stride for stride",
+            "something that circled a campsite all night without ever once approaching"],
+  },
 };
+// The original five, in their original Object.keys() order — this is the
+// ONLY pool rollThread() draws from when meta.unlocks.antagonistHunt is
+// absent (which includes every simulate(n) run, meta always null there), so
+// the seeded stream and every balance number in CLAUDE.md are untouched by
+// adding `hunt` above. ANTAGONIST_TYPE_KEYS (all six) is for lookups that
+// need every defined type, never for the random draw itself.
+const ANTAGONIST_TYPE_KEYS_BASE = ["lich","tyrant","dragon","plague","god"];
 const ANTAGONIST_TYPE_KEYS = Object.keys(ANTAGONIST_TYPES);
 
 function rollAntagonistName(type){
@@ -1189,8 +1380,10 @@ function rollAntagonistName(type){
   const e = pick(t.epithets);
   return t.nameFmt(f, e);
 }
-function rollThread(){
-  const type = pick(ANTAGONIST_TYPE_KEYS);
+function rollThread(meta){
+  const keys = (meta && meta.unlocks && meta.unlocks.antagonistHunt)
+    ? ANTAGONIST_TYPE_KEYS : ANTAGONIST_TYPE_KEYS_BASE;
+  const type = pick(keys);
   const t = ANTAGONIST_TYPES[type];
   return {antagonist: rollAntagonistName(type), antagonistType: type,
           goal: pick(t.goals), doom: pick(t.dooms)};
@@ -1232,6 +1425,12 @@ const ACT_MAJOR = {
       "The old prayers have started coming back wrong, is all anyone will tell {name} before {name} leaves. Something is answering that isn't supposed to be listening — {antagonist}, they call it, when they call it anything.",
       "{name} takes the road with a warning ringing that isn't quite made of words — something about {antagonist}, delivered by no one {name} can name afterward.",
     ],
+    hunt: [
+      "{name} takes the road with a horn's last note still hanging in the air behind them — {antagonist}, the old woman at the crossroads called it, before admitting she'd never seen it and hoped never to.",
+      "Before {name} has gone a mile, dogs two farms over start baying at nothing anyone else can hear. Word already has a name for whatever set them off: {antagonist}.",
+      "{name} leaves town with a warning about staying off the old chase-roads after dark — {antagonist} still uses them, apparently, and has never once cared who else is on them.",
+      "There's a set of antlers nailed above the tavern door that nobody in {name}'s hearing will explain, beyond a single word, said low: {antagonist}.",
+    ],
   },
   2: {
     lich: [
@@ -1263,6 +1462,12 @@ const ACT_MAJOR = {
       "The Thornwood's oldest chapel has gone silent; no bird will nest in its eaves anymore. {antagonist}'s attention rests somewhere nearby.",
       "{name} meets a hedge-priest who hasn't slept in a week, keeping watch on a sky that {antagonist} keeps almost-answering.",
       "{name} watches a Thornwood congregation pray to an altar that answers back, once, in a voice too large for the room it's in. {antagonist}, unmistakably.",
+    ],
+    hunt: [
+      "In the Thornwood, {name} finds a hunting trail cut clean through five miles of undergrowth in one straight, unbroken line. {antagonist} doesn't hunt like anything else does.",
+      "{name} counts hoofprints pressed into stone that has no business taking a print at all. {antagonist}'s reach, evidently, isn't limited to soft ground.",
+      "The March's woodwards have started leaving trophies of their own at the old chase-shrines — not offerings, they insist, just paying a toll {antagonist} never had to ask for.",
+      "{name} hears the horns three times in one night, each one from a different direction, all three somehow the same horn. {antagonist} doesn't need to be one thing to be everywhere.",
     ],
   },
   3: {
@@ -1296,6 +1501,12 @@ const ACT_MAJOR = {
       "{name} reads the last testament of a priesthood that stopped existing generations ago. {antagonist}'s aim was always to {goal}.",
       "{name} finds an oracle's last words carved into the Barrows' deepest wall, plain as anything written down ever gets: {antagonist} means to {goal}.",
     ],
+    hunt: [
+      "{name} finds antlers driven into a Barrow doorway like a marker, the bone beneath them centuries old. Whatever {antagonist} is keeping trophies for, the goal was always to {goal}.",
+      "{name} reads hoofprints crossing water that shouldn't hold a print at all, and understands: {antagonist} means to {goal}, and has been since long before the Barrows flooded.",
+      "The Barrows' lower gallery is arranged like a trophy hall, antler and horn and bone stacked by a patience with one purpose — {antagonist} means to {goal}.",
+      "{name} finds a shrine where every offering is an antler, none of them recent, all of them proof of the same aim: {antagonist} means to {goal}.",
+    ],
   },
   4: {
     lich: [
@@ -1328,6 +1539,12 @@ const ACT_MAJOR = {
       "The Reach takes its due from {name} in silence. Whatever {antagonist} wanted, it already has it.",
       "{name} pays a toll in Emberfall {name} never agreed to and can't quite name afterward. {antagonist} collects it regardless.",
     ],
+    hunt: [
+      "Emberfall costs {name} someone who stood between them and the pack for exactly long enough — {antagonist} doesn't take prisoners, only whatever's offered.",
+      "{name} loses ground in the Reach that isn't measured in miles. {antagonist}'s hounds took something owed, and didn't explain the accounting.",
+      "The cost of crossing Emberfall arrives on four legs and doesn't announce itself twice. {name} keeps walking anyway, lighter than before.",
+      "{name} pays for passage through Emberfall in a way the trail behind them will remember longer than the road ahead does.",
+    ],
   },
   5: {
     lich: [
@@ -1359,6 +1576,12 @@ const ACT_MAJOR = {
       "{name} can feel {antagonist}'s attention now, even at this distance — patient, total, unhurried. It has always known {name} was coming.",
       "There is no more road after the Wastes, only the place where {antagonist} has been waiting since before there was a name for waiting.",
       "{name} crosses into a silence the Wastes have been keeping in reserve for {antagonist}, patient as everything else about it.",
+    ],
+    hunt: [
+      "The Ashen Wastes lie between {name} and {antagonist} now, and the horns have started sounding closer than they ever have.",
+      "{name} can feel {antagonist} the way you feel something gaining on you — closer with every mile of ash, and no longer bothering to hide it.",
+      "There is no more road after this stretch, only the ground {antagonist} has been herding {name} toward the whole time.",
+      "{name} crosses into the Wastes understanding, finally, that the chase was never random. It was always leading here.",
     ],
   },
 };
@@ -1425,6 +1648,26 @@ const ZONE_MINOR = {
     "A column of refugees passes {name} going the other way, moving fast, saying little beyond {sign} — the kind of warning that doesn't need repeating twice.",
   ],
 };
+// Bonus minor-beat variants, one per zone, unlocked by the allDilemmas
+// achievement (meta.unlocks.veteranInsight) — a nod to a player who's weighed
+// every crossroads the road offers. zoneMinorPool() appends these to the
+// base ZONE_MINOR[zoneN] array rather than replacing it, only when S._meta
+// carries the flag. pick() always draws exactly one rng() value regardless
+// of array length, so simulate(n) (meta always null, base array only) is
+// bit-for-bit unaffected by this extension.
+const ZONE_MINOR_VETERAN = {
+  1: "{name} clocks the shape of {sign} almost before it finishes happening — not the first road, and it shows.",
+  2: "{sign}. {name} has learned, by now, exactly how much of a warning that actually is.",
+  3: "{name} reads {sign} the way a much older hand would — quickly, and without needing to be told twice.",
+  4: "{sign}. {name} has stopped being surprised by the Reach's particular flavor of trouble.",
+  5: "{name} clocks {sign} at a glance now, the specific unhurried read of someone who's crossed ground like this before.",
+  6: "{sign}. {name} has learned exactly how much attention that deserves, and gives it exactly that much.",
+};
+function zoneMinorPool(S, zoneN){
+  const base = ZONE_MINOR[zoneN];
+  return (S._meta && S._meta.unlocks && S._meta.unlocks.veteranInsight)
+    ? base.concat([ZONE_MINOR_VETERAN[zoneN]]) : base;
+}
 
 /* ------------------------- antagonist on-screen beats ---------------------- */
 // Rob's brief (2026-08-03): two measured gaps — every blocking choice was a
@@ -1461,13 +1704,46 @@ const ACT4_FAILURE_LEVEL = 32;
 // coming as danger. Floors at 1 HP and fires the same near-death crossing log
 // line rollPeril() does, so a dilemma that hurts reads exactly like a peril
 // that hurts everywhere else in the chronicle.
+// nearDeathVeteran bookkeeping, shared by both near-death crossing call
+// sites (rollPeril() and applyHpFrac()) so the counter and the achievement
+// check live in exactly one place. Guarded on S._meta first, same discipline
+// as unlockAchievement() itself, so simulate(n) (meta always null) never
+// touches this.
+function noteNearDeathCrossing(S){
+  if (!S._meta) return;
+  S._meta.nearDeathCrossings = (S._meta.nearDeathCrossings || 0) + 1;
+  saveMeta();
+  if (S._meta.nearDeathCrossings >= 15) unlockAchievement(S._meta, "nearDeathVeteran", S);
+}
+// The near-death crossing (HP falls under 20% having been above it a moment
+// ago) is a back-half-of-the-run staple — fires often once perils start
+// hitting harder in zones 4-6. hashPick() on name+HP+level, not pick() — both
+// call sites below (applyHpFrac and rollPeril) sit inside the simulation core
+// and neither has ever spent an rng() draw here.
+const NEARDEATH_LINES = [
+  "{name} is barely standing. HP critical.",
+  "{name}'s legs nearly go out from under them. Not much left to spend.",
+  "{name} is running on fumes now, and the road doesn't care.",
+  "Whatever {name} has left, it isn't much. HP critical.",
+  "{name} is a bad step away from not getting back up.",
+  "The margin around {name} has gone very thin. HP critical.",
+  "{name} is still moving, technically. Everything past that is borrowed.",
+  "There isn't much of {name} left to spend right now, and the road knows it.",
+];
+function nearDeathLine(S){
+  const h = S.hero;
+  const tmpl = hashPick(NEARDEATH_LINES, h.name + "#nd#" + Math.round(h.hp) + "#" + h.level);
+  return fillTemplate(tmpl, {name: h.name});
+}
 function applyHpFrac(S, frac){
   const h = S.hero, d = derived(h, S.gear);
   const wasSafe = h.hp / d.maxHP >= 0.20;
   const delta = Math.round(d.maxHP * frac);
   h.hp = Math.max(1, Math.min(d.maxHP, h.hp + delta));
-  if (wasSafe && h.hp / d.maxHP < 0.20)
-    logEvent(S, "neardeath", `${h.name} is barely standing. HP critical.`, 1);
+  if (wasSafe && h.hp / d.maxHP < 0.20){
+    logEvent(S, "neardeath", nearDeathLine(S), 1);
+    noteNearDeathCrossing(S);
+  }
   return delta;
 }
 // A lingering scar (or, sometimes, a callus) — a small PERMANENT shift to a
@@ -1779,6 +2055,11 @@ const ANTAGONIST_ENCOUNTER = {
       "A hedge-priest shows {name} a shadow that fell the wrong direction for eleven straight days before correcting itself. {antagonist}'s doing, probably. Nobody local wants to say probably out loud.",
       "{name} meets a pilgrim walking backward down the Thornwood road, insisting it's the only direction {antagonist} hasn't noticed yet. The pilgrim might even be right.",
     ],
+    hunt: [
+      "{name} hears the pack before seeing it — not {antagonist} itself, but hounds wearing {antagonist}'s exact patience, circling a Thornwood clearing all night without ever once closing in.",
+      "A rider passes {name} on the March road at a dead run, not fleeing exactly, just keeping the precise distance a prey animal keeps from something that hasn't decided to close yet. {antagonist}'s doing, unmistakably.",
+      "{name} finds a hunting party — someone else's — laid out in a neat row at a Thornwood crossroads, gear untouched, nothing missing but the people. {antagonist} leaves its courtesies exactly where they'll be found.",
+    ],
   },
   3: {
     lich: [
@@ -1805,6 +2086,11 @@ const ANTAGONIST_ENCOUNTER = {
       "{name} meets something in the Barrows that speaks with {antagonist}'s certainty but none of its patience — an aspect, a fragment, enough of it to make the difference feel irrelevant.",
       "A shrine in the Barrows answers a prayer {name} didn't make, in a voice that isn't {antagonist} exactly but knows {antagonist} well enough to borrow its authority for the length of one sentence.",
       "{name} meets a Barrows oracle mid-trance, speaking a full sentence in {antagonist}'s cadence without seeming to notice the borrowing at all.",
+    ],
+    hunt: [
+      "{name} comes across something {antagonist} sent ahead into the Barrows — not the huntsman itself, but wearing enough of the pack's patience to make the distinction academic. It doesn't attack. It simply keeps pace, the whole time {name} is down there, and leaves the moment {name} does.",
+      "In the Barrows' deepest gallery, {name} finds fresh trophies mounted beside centuries-old ones — {antagonist}'s collection, still growing, still exactly as patient as it's always been.",
+      "{name} hears hoofbeats matched to a heartbeat that isn't {name}'s own, close in the flooded dark, gone the instant {name} turns to face it. {antagonist} doesn't need to be seen to be felt.",
     ],
   },
 };
@@ -1842,6 +2128,11 @@ const ACT4_FAILURE = {
     "{antagonist}'s attention finds {name} in Emberfall the way weather finds low ground — total, unhurried, and not remotely interested in whether {name} is ready.",
     "{name} meets something in Emberfall that answers to {antagonist}, or answers as {antagonist}, or possibly is simply {antagonist} deciding to be looked at directly for once. None of the three options go well.",
     "{antagonist} doesn't arrive in Emberfall so much as {name} arrives INSIDE its attention, all at once, the way you'd notice a room had gone underwater around you.",
+  ],
+  hunt: [
+    "In Emberfall's cinder-lit dark, {antagonist} finally closes the distance it's kept for weeks — not a chase anymore, just the end of one, and {name} learns exactly how long {antagonist} can afford to wait before finishing it.",
+    "{name} turns, finally, to face the thing that's been pacing three ridges back since the Hollow, and understands too late that turning was the mistake — {antagonist} was never behind. {antagonist} was herding.",
+    "{antagonist} doesn't send the pack ahead this time — arrives itself, unhurried, and shows {name} exactly what the chase was always going to cost once it stopped being a chase.",
   ],
 };
 
@@ -1918,6 +2209,45 @@ function flagEpitaph(S, outcome){
     return ` Somewhere behind ${h.name}, in the Ashen Wastes, someone is still walking because ${h.name} stopped once. That doesn't end the story. It's still true.`;
   if (f.village === "helped")
     return ` A village ${h.name} once stopped to help is still standing, mostly — more than it would have said for itself the day ${h.name} found it.`;
+  // The remaining flags never paid off outside their own dilemma scene until
+  // now — a choice that never comes back is decorative, not a payoff.
+  if (f.shortcut === "took")
+    return ` Something ${h.name} traded away in the Barrows' dark never did come back — a name misplaced, and never quite recovered. It goes unnoticed most days. Today isn't most days.`;
+  if (f.shortcut === "declined")
+    return ` The long way through the Barrows cost hours ${h.name} never got back, and nothing else. There are worse trades to have made.`;
+  if (f.rival === "carried")
+    return ` Somewhere, someone finally hears the message a dying stranger once asked ${h.name} to carry. It took the whole rest of the road getting there. It got there.`;
+  if (f.rival === "robbed")
+    return ` ${h.name} still has the boots taken off a stranger who didn't need them anymore. They never did fit quite right. ${h.name} wore them anyway.`;
+  if (f.rival === "lost")
+    return ` Whatever ${h.name} was once carrying for a dying stranger never reached anyone. It didn't survive Act IV. Neither, in the end, did the promise.`;
+  if (f.village === "passed")
+    return ` A village ${h.name} once walked past without stopping is still out there somewhere, rebuilt or not. ${h.name} never went back to find out which.`;
+  if (f.village === "mercenary")
+    return ` The gold ${h.name} once took for a hard day's labor in a ruined village spent like any other gold. What it cost to take it that way didn't.`;
+  if (f.wastes === "robbed")
+    return ` A canteen taken off a stranger in the Wastes outlasted whatever it was traded for. ${h.name} still isn't sure it was a fair trade.`;
+  if (f.wastes === "left")
+    return ` ${h.name} still thinks, sometimes, about a shape in the ash that got smaller, and then gone. The Wastes take a great many people nobody stops for.`;
+  return "";
+}
+
+// Same idea as act4FlagLine/flagEpitaph, but at a third beat — the moment the
+// confrontation actually begins — so a flag set hours (or acts) earlier isn't
+// only ever felt at the two places that already read it back. Pure string
+// concatenation, no rng()/pick() of its own, called once at its one call site
+// (beginConfrontation).
+function confrontationFlagLine(S){
+  const f = S.world.flags || {};
+  const h = S.hero;
+  if (f.edge === "accepted")
+    return ` Whatever ${h.name} took on that stretch of road a long time ago is still there, right under the surface, exactly when it's needed most.`;
+  if (f.shortcut === "declined")
+    return ` The ward earned for refusing an easy way through the Barrows is still holding, acts later than ${h.name} probably expected it to. ${h.name} can feel it, faintly, standing here.`;
+  if (f.village === "mercenary")
+    return ` ${h.name} thinks, of all things, of coin taken from grieving hands a long time ago. It bought passage. It's still being paid for.`;
+  if (f.rival === "robbed")
+    return ` Someone else's boots have carried ${h.name} this whole way. It surfaces now, of all moments, and ${h.name} doesn't have time to ask why.`;
   return "";
 }
 
@@ -1933,6 +2263,19 @@ const CONFRONTATION_ANNOUNCE = [
   "The road runs out. What's left is {antagonist}, and whatever is about to happen between them.",
   "{name} is as ready as the road can make anyone. {antagonist} is waiting, and {doom} if {name} isn't ready enough.",
 ];
+// Bonus announce variant, unlocked by the speedFifty achievement
+// (meta.unlocks.confrontVeteran) — a nod to a player who's watched a hero
+// make it here faster than the road usually allows. confrontAnnouncePool()
+// appends this only when unlocked; pick() draws once regardless of pool
+// size, so simulate(n) (meta always null) always draws from the unmodified
+// 3-line base array.
+const CONFRONTATION_ANNOUNCE_VETERAN = [
+  "{name} has reached this threshold faster than the road usually allows anyone — {antagonist} has had less warning of it than most who've stood here.",
+];
+function confrontAnnouncePool(S){
+  return (S._meta && S._meta.unlocks && S._meta.unlocks.confrontVeteran)
+    ? CONFRONTATION_ANNOUNCE.concat(CONFRONTATION_ANNOUNCE_VETERAN) : CONFRONTATION_ANNOUNCE;
+}
 
 const CONFRONTATION_SEQUENCE = {
   lich: [
@@ -1995,6 +2338,18 @@ const CONFRONTATION_SEQUENCE = {
     "{antagonist} makes its case for why this should already be over. {name} makes the case by still being there.",
     "The last exchange isn't strength against strength. It's whether {name} is still standing when it's finished deciding.",
   ],
+  hunt: [
+    "{name} passes the last trophy line into ground {antagonist} has claimed as its own hunting ground for longer than the Crown has had a name.",
+    "The horns go silent all at once — not absence, {name} realizes, but arrival. The chase is over. Something else starts here.",
+    "{antagonist} circles once before closing, the way it's circled everything it's ever run to ground, patient as weather.",
+    "The pack falls in behind {antagonist}, and for the first time in this whole long chase, {name} understands exactly how outmatched the hunt always was.",
+    "{antagonist} shows {name} exactly what it costs to {goal} — and makes clear the cost was never negotiable.",
+    "{name} gives ground, then finds a way to take it back in the space between one hoofbeat and the next.",
+    "{antagonist}'s reach closes on something that isn't quite {name}'s throat, and doesn't quite let go.",
+    "The ground here is trophy ground, generations deep, every one of them a chase that ended exactly like this one is about to.",
+    "{name} finds the one true thing in all of it: {antagonist} has never once lost a hunt, and has clearly never had to consider what that would look like.",
+    "Everything {antagonist} has run down for {goal} comes to a single last exchange, and {name} is the one left standing to make it.",
+  ],
 };
 
 // Elevated-peril flavor lines specific to the confrontation (referencing the
@@ -2020,6 +2375,10 @@ const CONFRONTATION_PERILS = {
         "A silence with weight to it nearly stops {name}'s heart outright","{antagonist} makes an argument {name}'s body almost believes",
         "Something ancient and patient nearly wins on patience alone",
         "{antagonist} rewrites the ground {name} is standing on, briefly, to see what happens","The space between one heartbeat and the next stretches further than it should"],
+  hunt: ["{antagonist}'s hounds close from every side at once","A horn sounds close enough to feel in the teeth, and something answers it out of {name}'s own blind side",
+         "{antagonist}'s antlers rake a line clean across {name}'s guard","The pack drives {name} toward ground with nowhere left to give",
+         "{antagonist} closes the last of the distance it's kept for the entire chase",
+         "Something old and unwearied nearly ends it on patience alone","{antagonist} doesn't strike so much as simply arrive, all at once, exactly where {name} isn't looking"],
 };
 
 // Fired the instant the tenth step resolves without a death.
@@ -2034,6 +2393,8 @@ const ASCENSION_LINES = {
            "The wells will run clean again. {antagonist}'s count of the dead doesn't get one more name."],
   god: ["{antagonist} finally answers for something. {name} is the one it answers to.",
         "The judgment {antagonist} came to deliver gets delivered instead — to it."],
+  hunt: ["The horns finally stop, for good this time. {antagonist}'s hunt runs out of quarry, and {name} is the reason why.",
+         "{antagonist} loses a hunt for the first time in longer than anyone alive can account for. {name} is still standing to see it happen."],
 };
 
 // The ascension epilogue screen (mirrors EPILOGUES for death). Generic across
@@ -2216,17 +2577,105 @@ const ACHIEVEMENTS = {
     reward: "New heroes start equipped with an Uncommon relic.",
     apply: meta => { meta.unlocks.startRelic = "uncommon"; },
   },
+  // Reward changed 2026-08-07 — "Unlocks Zone 7 (in development)" was a stub
+  // for content that doesn't exist. A sixth antagonist type ("the Hunt," see
+  // ANTAGONIST_TYPES) is real content available today: a whole new per-run
+  // story flavor for the player who's proven the game three times over.
+  // rollThread() only draws it when this flag is set (see ANTAGONIST_TYPE_KEYS
+  // vs ANTAGONIST_TYPE_KEYS_BASE) — simulate(n)'s meta is always null, so the
+  // seeded harness always draws from the original five, untouched.
   ascendThrice: {
     name: "Thrice Proven",
     desc: "Ascend three times.",
-    reward: "Unlocks Zone 7 (in development).",
-    apply: meta => { meta.unlocks.zone7 = true; },
+    reward: "Unlocks a sixth antagonist type — the Hunt — for future heroes' threads.",
+    apply: meta => { meta.unlocks.antagonistHunt = true; },
   },
+  // Reward changed 2026-08-07 — the old +1 inventory slot was measured NET
+  // NEGATIVE (520 heroes/config, 2 seeds: ascension 17.7% -> 16.2%, avg
+  // lifespan 14.50h -> 14.18h). A bigger bag fills more slowly, which means
+  // FEWER merchant trips, and a merchant trip is a full heal — CLAUDE.md
+  // "The economy" already flags merchant frequency as the primary balancing
+  // knob. Replaced with a guaranteed +1 starting cheat-death charge (an
+  // unambiguous extra life, never structurally worse) plus the flavor Rob
+  // originally proposed: new heroes begin already knowing where one of their
+  // fallen predecessors lies (applyGraveSenseAtCreation()), which pays off
+  // the graves/heirloom system and is power-neutral on the item side because
+  // generateHeirloom() re-scales any recovered gear to the finder's own zone.
   tenHeroesRest: {
     name: "A Long List of Names",
     desc: "Lay 10 heroes to rest.",
-    reward: "+1 inventory slot, permanently.",
-    apply: meta => { meta.unlocks.invSlotBonus = (meta.unlocks.invSlotBonus || 0) + 1; },
+    reward: "New heroes start with +1 cheat-death charge, and already know where one of your fallen heroes lies.",
+    apply: meta => { meta.unlocks.graveSense = true; },
+  },
+
+  // --- New 2026-08-07 (roughly doubles the set) ---
+
+  actIV: {
+    name: "The Reckoning",
+    desc: "Reach Act IV — a cost is about to be paid.",
+    reward: "Unlocks the Wayfarer name pool at hero creation.",
+    apply: meta => { meta.unlocks.wayfarerNames = true; },
+  },
+  actV: {
+    name: "The Long March",
+    desc: "Reach Act V — the march toward confrontation begins.",
+    reward: "New heroes' chronicles open with a one-line nod to the last hero who left the road.",
+    apply: meta => { meta.unlocks.legacyCallback = true; },
+  },
+  allDilemmas: {
+    name: "Every Crossroads",
+    desc: "Resolve all five kinds of crossroads dilemma — village, rival, shortcut, wastes, and the edge — across all your heroes.",
+    reward: "+2 Wisdom, permanently, and minor story beats read with a veteran's extra insight.",
+    apply: meta => { meta.unlocks.dilemmaWisdom = true; meta.unlocks.veteranInsight = true; },
+  },
+  heirloomRecoverer: {
+    name: "Keeper of What's Left",
+    desc: "Recover 3 heirlooms from the graves of the fallen.",
+    reward: "A small permanent boost to drop quality, and unlocks the Grave-Given name pool.",
+    apply: meta => { meta.unlocks.gravenDropBump = 0.5; meta.unlocks.gravenNames = true; },
+  },
+  commissioner: {
+    name: "The Right Price",
+    desc: "Commission a piece of gear from the merchant.",
+    reward: "New heroes buy at a small permanent discount, and the merchant remembers a familiar face.",
+    apply: meta => { meta.unlocks.merchantDiscount = 0.03; meta.unlocks.merchantVeteran = true; },
+  },
+  nearDeathVeteran: {
+    name: "Too Stubborn to Fall",
+    desc: "Cross into near-death and survive it 15 times, across all your heroes.",
+    reward: "+2% evasion, permanently, and unlocks the Scarred name pool.",
+    apply: meta => { meta.unlocks.scarredEvasion = 0.02; meta.unlocks.scarredNames = true; },
+  },
+  allRacesPlayed: {
+    name: "Every Blood",
+    desc: "Create at least one hero of every playable race — Human, Dwarf, Elf, Halfling, Orc, and Tiefling.",
+    reward: "Unlocks the Bloodmarked name pool at hero creation.",
+    apply: meta => { meta.unlocks.bloodmarkedNames = true; },
+  },
+  fiftyHeroesRun: {
+    name: "A Long Line of Fools and Heroes",
+    desc: "Send 50 heroes out onto the road, across your lifetime.",
+    reward: "+2 Constitution, permanently, and cheat-death moments gain a veteran's extra line.",
+    apply: meta => { meta.unlocks.veteranToughness = true; meta.unlocks.cheatDeathVeteran = true; },
+  },
+  // Threshold is 14h, not 12h. Measured: across 500 heroes deliberately built
+  // for speed (Elf -> Apprentice -> Sorcerer, the fastest line in the game),
+  // exactly ONE reached 50 inside 12h, at 11.92h — about 6,500 hours of play
+  // per unlock. That is the "Six Graves" failure mode again: technically
+  // possible, practically never. At 14h most speed-build runs that survive to
+  // 50 qualify, while the overall median to 50 (~15-16h) still does not, so it
+  // stays a genuine feat. Re-measure this if the XP curve or arc length moves.
+  speedFifty: {
+    name: "Meteoric",
+    desc: "Reach level 50 in under 14 hours, in a single run.",
+    reward: "+5% experience, permanently, and the final confrontation gains a bonus opening line.",
+    apply: meta => { meta.unlocks.speedXpBonus = 0.05; meta.unlocks.confrontVeteran = true; },
+  },
+  ascendAllLineages: {
+    name: "Three Roads to the End",
+    desc: "Ascend at least once with a hero from each starting lineage — Soldier, Scout, and Apprentice.",
+    reward: "+1 to all six stats, permanently, and unlocks the Threefold name pool.",
+    apply: meta => { meta.unlocks.threefoldBoon = true; meta.unlocks.threefoldNames = true; },
   },
 };
 const ACHIEVEMENT_KEYS = Object.keys(ACHIEVEMENTS);
@@ -2324,6 +2773,34 @@ const NAME_TITLES = [
   "the Quiet","Longstride","the Steady","Cinderborn","the Watchful","Roadworn",
   "the Last","Emberkin","the Patient","Graveward",
 ];
+// Four more pools (2026-08-07 achievement pass) — same mechanism as
+// Ancient/Titles above, each gated on its own meta.unlocks flag and folded
+// into rollHeroName()'s draw. Two are FIRST-name banks (widen the primary
+// pick, same slot as NAME_ANCIENT); two are SUFFIX banks (same slot as
+// NAME_TITLES).
+const NAME_WAYFARER = [       // actIV — firsts
+  "Farrow","Dunstan","Ashby","Talwyn","Roswen","Brackon","Ilse","Corvyn",
+  "Waverly","Thistle","Adair","Brynmor","Selwyn","Fenna","Torrin","Maribel",
+];
+const NAME_BLOODMARKED = [    // allRacesPlayed — firsts
+  "Kessandra","Duvrak","Sarrow","Malkin","Ithrenn","Corbeth","Veylan","Nyssara",
+  "Draeven","Osmund","Kethra","Vantor","Isengrim","Merrow","Rhoswen","Callix",
+];
+const NAME_GRAVEN = [         // heirloomRecoverer — suffixes
+  "the Grave-Kept","Stonebound","the Remembered","Cairnwalker","the Unforgotten",
+  "Bonecarrier","the Kept Name","Markstone","the Recovered","Tombtread",
+  "the Long-Held","Grave-Wise","the Carried On","Nameward","the Still-Spoken","Barrowkin",
+];
+const NAME_SCARRED = [        // nearDeathVeteran — suffixes
+  "the Scarred","Stillstanding","the Once-Fallen","Hardwon","the Nearly-Lost",
+  "Breathheld","the Clawed-Back","Ashwalked","Bloodkept","the Barely",
+  "Edgewalker","the Held-On","Riskproof","the Spared","Reddened","the Unwilling-Ended",
+];
+const NAME_THREEFOLD = [      // ascendAllLineages — suffixes
+  "the Threefold","Allroads","Pathbound","the Every-Way","Roadsworn",
+  "the Three-Proven","Convergent","Triune","the Three-Walked","Manifold",
+  "Crossbound","the Threeway Road","Waymet","the Three Made One","Confluence","Allpath",
+];
 // Per-race first-name banks (item 4) — distinct phonetic character per race so
 // a dwarf and an elf don't share a drawer of names. NAME_FIRST (above) stays
 // the human bank AND the no-race-chosen-yet fallback, since humans are this
@@ -2355,18 +2832,66 @@ const NAME_FIRST_BY_RACE = {
 function rollHeroName(meta, raceKey){
   const base = (raceKey && NAME_FIRST_BY_RACE[raceKey]) ? NAME_FIRST_BY_RACE[raceKey] : NAME_FIRST;
   const pool = base.slice();
-  if (meta && meta.unlocks && meta.unlocks.ancientNames) pool.push(...NAME_ANCIENT);
+  const u = (meta && meta.unlocks) || {};
+  if (u.ancientNames) pool.push(...NAME_ANCIENT);
+  if (u.wayfarerNames) pool.push(...NAME_WAYFARER);
+  if (u.bloodmarkedNames) pool.push(...NAME_BLOODMARKED);
   let name = pick(pool);
-  if (meta && meta.unlocks && meta.unlocks.titleNames && rng() < 0.5) name += " " + pick(NAME_TITLES);
+  const suffixes = [];
+  if (u.titleNames) suffixes.push(...NAME_TITLES);
+  if (u.gravenNames) suffixes.push(...NAME_GRAVEN);
+  if (u.scarredNames) suffixes.push(...NAME_SCARRED);
+  if (u.threefoldNames) suffixes.push(...NAME_THREEFOLD);
+  if (suffixes.length && rng() < 0.5) name += " " + pick(suffixes);
   return name;
 }
 
 /* ------------------------------ state factory ---------------------------- */
 
+// Permanent base-stat bumps granted by lifetime achievements — same layer as
+// race mods (RACES[x].mods), a direct addition to the hero's BASE stats,
+// computed once at creation. Every flag here is read from meta.unlocks,
+// which is only ever truthy for a real player (simulate(n) always passes
+// meta=null to createState), so the harness's statline is untouched. Kept
+// modest and each on ITS OWN achievement (never stacked two bonuses onto one
+// unlock) per Rob's 2026-08-07 note: spread across levers, don't collapse
+// class identities into one optimal build.
+function achievementStatMods(meta){
+  const m = {};
+  const u = (meta && meta.unlocks) || {};
+  if (u.dilemmaWisdom) m.wis = (m.wis || 0) + 2;                              // allDilemmas
+  if (u.veteranToughness) m.con = (m.con || 0) + 2;                          // fiftyHeroesRun
+  if (u.threefoldBoon) for (const k of STAT_KEYS) m[k] = (m[k] || 0) + 1;    // ascendAllLineages
+  return m;
+}
+
+// actV achievement reward (meta.unlocks.legacyCallback) — new heroes' opening
+// chronicle nods to whoever most recently left the road, tying a fresh hero
+// to the player's own Hall of Legends rather than starting in a vacuum.
+// Reads meta.hall (never mutates it), so it's safe to call even when hall is
+// empty (a player could unlock this and then never see it fire until their
+// NEXT hero dies/ascends/retires — that's fine, there's nothing to call back to yet).
+function legacyCallbackLine(meta){
+  if (!meta || !meta.unlocks || !meta.unlocks.legacyCallback) return null;
+  if (!meta.hall || !meta.hall.length) return null;
+  const prev = meta.hall[meta.hall.length - 1];
+  const article = aOrAn(RACES[prev.race] ? RACES[prev.race].name : prev.race);
+  const raceName = RACES[prev.race] ? RACES[prev.race].name : prev.race;
+  const phrase = prev.status === "Legend" ? "who finished the whole story"
+    : prev.status === "Retired" ? "who stepped off the road while they still could"
+    : "who didn't come back";
+  // Raw text, NOT esc()'d here — entryHtml() escapes every log entry's text
+  // at render time (see esc(e.text) there), same as every other logEvent()
+  // call in this file. Pre-escaping here would double-escape (e.g. an
+  // apostrophe in a rolled name would render as "&amp;#39;").
+  return `The road remembers ${prev.name}, ${article} ${raceName} ${phrase} — before this one even takes the first step.`;
+}
+
 function createState(name, raceKey, meta){
   const race = RACES[raceKey];
+  const achMods = achievementStatMods(meta);
   const stats = {};
-  for (const k of STAT_KEYS) stats[k] = 8 + (race.mods[k] || 0);
+  for (const k of STAT_KEYS) stats[k] = 8 + (race.mods[k] || 0) + (achMods[k] || 0);
   const statFrac = {}; for (const k of STAT_KEYS) statFrac[k] = 0;
 
   const S = {
@@ -2375,7 +2900,14 @@ function createState(name, raceKey, meta){
       name, race: raceKey, cls: "novice", classPath: ["novice"],
       level: 1, xp: 0, hp: 0, stats, statFrac,
       gold: (meta && meta.unlocks && meta.unlocks.startGold) || 0,
-      skills: [], cheatDeathCharges: race.bonusCheatDeath || 0,
+      skills: [],
+      // graveSense (tenHeroesRest) also grants +1 starting cheat-death
+      // charge — a strictly-positive, "genuinely good" reward (an extra
+      // life, never structurally worse the way the old +1 inventory slot
+      // was — see CLAUDE.md "A Long List of Names") — on top of the
+      // grave-knowledge flavor below.
+      cheatDeathCharges: (race.bonusCheatDeath || 0)
+        + ((meta && meta.unlocks && meta.unlocks.graveSense) ? 1 : 0),
       skillCheatDeathQueue: [], skillState: {},
       boons: [],   // dilemma-granted temporary effects — see grantBoon()/boonAgg()
       // Persistent world (2026-08-03 brief) — ids of graves already found
@@ -2388,6 +2920,13 @@ function createState(name, raceKey, meta){
       // through the simulation core). See ACHIEVEMENTS' apply() functions.
       metaDropBonus: (meta && meta.unlocks && meta.unlocks.dropBonus) || 0,
       metaInvBonus: (meta && meta.unlocks && meta.unlocks.invSlotBonus) || 0,
+      // New lifetime-achievement perks (2026-08-07), same baked-at-creation
+      // pattern as the two above — folded into derived() (see below), never
+      // read directly by anything downstream.
+      metaDropTierBump: (meta && meta.unlocks && meta.unlocks.gravenDropBump) || 0,   // heirloomRecoverer
+      metaEvasionBonus: (meta && meta.unlocks && meta.unlocks.scarredEvasion) || 0,   // nearDeathVeteran
+      metaBuyDiscount: (meta && meta.unlocks && meta.unlocks.merchantDiscount) || 0,  // commissioner
+      metaXpBonus: (meta && meta.unlocks && meta.unlocks.speedXpBonus) || 0,          // speedFifty
     },
     world: {
       zone: 1, state: "QUESTING", taskProgressMs: 0, taskName: "",
@@ -2432,10 +2971,19 @@ function createState(name, raceKey, meta){
   // Done here, inside the pure state factory, so simulate(n) gets the exact
   // same opening beat a real playthrough would — not something bolted on in
   // the render layer.
-  S.world.thread = rollThread();
+  S.world.thread = rollThread(meta);
   logEvent(S, "birth", `${S.hero.name} takes up the road.`, 2);
   if (S.gear.relic) logEvent(S, "gear", `${S.hero.name} sets out already carrying ${itemPhrase(S.gear.relic)}.`, 1);
+  // actV reward (legacyCallback) — a one-line nod to the last hero who left
+  // the road, before the act-1 story beat below. legacyCallbackLine() only
+  // returns non-null for a real player with the unlock AND a non-empty Hall.
+  const callback = legacyCallbackLine(meta);
+  if (callback) logEvent(S, "story", callback, 1);
   logEvent(S, "story", fillTemplate(pick(ACT_MAJOR[1][S.world.thread.antagonistType]), threadVars(S)), 2);
+  // tenHeroesRest reward (graveSense) — guaranteed early grave discovery.
+  // Placed after the opening story beat so the log reads: birth, [legacy nod],
+  // Act I beat, THEN the grave-knowledge line — chronicle order, not creation order.
+  applyGraveSenseAtCreation(S);
   return S;
 }
 
@@ -2512,10 +3060,15 @@ function derived(hero, gear){
             * Math.max(0.65, 1 - st.str * 0.004)
             * (race.taskSpeedMult || 1)
             * agg.taskSpeedMult * bagg.taskSpeedMult,
-    xpMult:   (1 + st.int * 0.012) * (race.xpMult || 1) * agg.xpMult * bagg.xpMult,
+    // metaXpBonus (speedFifty) stacks as its own multiplicative factor, same
+    // shape as race.xpMult, so it composes cleanly with everything else here.
+    xpMult:   (1 + st.int * 0.012) * (race.xpMult || 1) * agg.xpMult * bagg.xpMult * (1 + (hero.metaXpBonus || 0)),
     goldMult: (1 + st.cha * 0.010) * agg.goldMult * bagg.goldMult,
+    // metaEvasionBonus (nearDeathVeteran) stacks on top of the DEX-derived
+    // cap, same as race.evasionBonus and skill/boon evasion already do —
+    // see the comment on skillAgg() for why that stacking is deliberate.
     evasion:  Math.min(BALANCE.evasionCap, st.dex * 0.008)
-              + (race.evasionBonus || 0) + agg.evasion + bagg.evasion,
+              + (race.evasionBonus || 0) + agg.evasion + bagg.evasion + (hero.metaEvasionBonus || 0),
     perilMult: Math.max(0.70, 1 - st.wis * 0.006),
     regenPerTask: maxHP * BALANCE.regenBase
                   * (1 + Math.min(st.con, BALANCE.regenConCap) / BALANCE.regenConDiv)
@@ -2523,8 +3076,12 @@ function derived(hero, gear){
     dropChance: 0.12 + (race.dropBonus || 0) + (hero.metaDropBonus || 0),
     mitigation: Math.min(BALANCE.skillMitigationCap, agg.mitigation + bagg.mitigation),
     sellMult: agg.sellMult,
-    buyMult: agg.buyMult,
-    dropTierBump: agg.dropTierBump,
+    // metaBuyDiscount (commissioner) reuses the same floor as skillBuyMultFloor
+    // so a stacked economy build still can't push prices to zero.
+    buyMult: Math.max(BALANCE.skillBuyMultFloor, agg.buyMult - (hero.metaBuyDiscount || 0)),
+    // metaDropTierBump (heirloomRecoverer) is the same "amount" scale as the
+    // dropQuality skill effect (treasure_sense is 1, loremans_eye is 0.6).
+    dropTierBump: agg.dropTierBump + (hero.metaDropTierBump || 0),
   };
 }
 
@@ -2571,6 +3128,50 @@ function allocateStats(S){
   }
 }
 
+// Level-up fires ~49 times a run and used to be one flat template the whole
+// way through — "reaches level N" reads the same at level 3 as at level 47,
+// which is wrong: a level-up in Act I (still finding their feet) shouldn't
+// read like one in Act V (closing in on the Crown). Keyed by act, selected
+// via hashPick() (name+level as seed — never an rng() draw) rather than
+// pick(), same discipline as the gear-drop and arrival banks.
+const LEVEL_UP_LINES = {
+  1: [
+    "{name} reaches level {level} — still finding their feet on this road, but finding them.",
+    "Level {level}. {name} is not who left the Hollow anymore, not quite.",
+    "{name} reaches level {level}, one small callus at a time.",
+    "Level {level} comes without ceremony. {name} barely notices the road doing its work.",
+    "{name} reaches level {level} — the early lessons, the ones that stick.",
+  ],
+  2: [
+    "{name} reaches level {level}, the chosen path starting to show in how they move.",
+    "Level {level}. Whatever {name} is becoming, it's getting harder to mistake for anyone else.",
+    "{name} reaches level {level} — the Thornwood's lessons, learned the hard way and kept.",
+    "Level {level} settles into {name} like something earned rather than given.",
+    "{name} reaches level {level}, steadier now than the hero who first entered this dark.",
+  ],
+  3: [
+    "{name} reaches level {level} — deeper in now than turning back would forgive.",
+    "Level {level}. {name} has stopped flinching at things that would have stopped them cold a few levels back.",
+    "{name} reaches level {level}, the road's cost and the road's reward climbing together.",
+    "Level {level} arrives with the particular confidence of someone who has survived worse than this so far.",
+    "{name} reaches level {level} — not far now from becoming whoever they're going to become.",
+  ],
+  4: [
+    "{name} reaches level {level}, carrying more than levels alone can measure at this point.",
+    "Level {level}. The road doesn't get easier from here, and {name} has stopped expecting it to.",
+    "{name} reaches level {level} — every one of them earned harder than the last.",
+    "Level {level} lands heavier than it used to. {name} notices, and keeps walking anyway.",
+    "{name} reaches level {level}, closer to the reckoning than to anywhere safe.",
+  ],
+  5: [
+    "{name} reaches level {level} — close enough now to the end that it has a shape.",
+    "Level {level}. Whatever waits at the Crown, {name} is nearly ready to meet it.",
+    "{name} reaches level {level}, each one now a step measured against what's coming.",
+    "Level {level} arrives with the Crown already visible on the horizon. {name} doesn't look away from it.",
+    "{name} reaches level {level} — this far along, turning back stopped being a real option a long time ago.",
+  ],
+};
+
 function levelUp(S){
   const h = S.hero;
   const before = derived(h, S.gear).maxHP;
@@ -2578,7 +3179,11 @@ function levelUp(S){
   allocateStats(S);
   const after = derived(h, S.gear).maxHP;
   h.hp += Math.max(0, after - before);   // new max HP arrives as usable HP
-  logEvent(S, "level", `${h.name} reaches level ${h.level}.`, 1);
+  {
+    const actN = actForLevel(h.level).n;
+    const tmpl = hashPick(LEVEL_UP_LINES[actN], h.name + "#level#" + h.level);
+    logEvent(S, "level", fillTemplate(tmpl, {name: h.name, level: h.level}), 1);
+  }
 
   // Story beats (design doc §12) fire on LEVEL thresholds, not task counts,
   // and always — even on a level that also opens a blocking choice below.
@@ -2590,9 +3195,17 @@ function levelUp(S){
     if (S._meta){
       if (newAct === 2) unlockAchievement(S._meta, "actII", S);
       if (newAct === 3) unlockAchievement(S._meta, "actIII", S);
+      if (newAct === 4) unlockAchievement(S._meta, "actIV", S);
+      if (newAct === 5) unlockAchievement(S._meta, "actV", S);
     }
   }
   if (h.level === 40 && S._meta) unlockAchievement(S._meta, "level40", S);
+  // Meteoric (speedFifty): level 50 reached in under 12 simulated hours, in
+  // this one run. w.clock is the simulated clock (never Date.now() — see
+  // CLAUDE.md "the one architectural rule"), so this reads correctly whether
+  // the level-up happened live or inside an offline catch-up burst.
+  if (h.level === 50 && S._meta && (S.world.clock - S.stats.birthTime) < 14 * 3600000)
+    unlockAchievement(S._meta, "speedFifty", S);
   if (MINOR_BEAT_LEVELS[h.level]){
     // Bucket is the hero's ZONE, not their act — see the comment on
     // ZONE_MINOR above for why. zoneForLevel() is a pure function of the
@@ -2600,7 +3213,7 @@ function levelUp(S){
     // than before but calls pick() exactly once, same as it always did.
     const zoneN = zoneForLevel(h.level).n;
     const sign = pick(ANTAGONIST_TYPES[S.world.thread.antagonistType].signs);
-    const tmpl = pick(ZONE_MINOR[zoneN]);
+    const tmpl = pick(zoneMinorPool(S, zoneN));
     logEvent(S, "story", fillTemplate(tmpl, threadVars(S, {sign})), 2);
   }
 
@@ -2884,6 +3497,55 @@ function equipItem(S, item){
   return old;
 }
 
+// Gear-drop phrasing (~200 fires per run, easily the most-read loot line in
+// the game after task lines) used to be one fixed template each for "first
+// piece in this slot" and "upgrade over what's equipped." Selected via
+// hashPick(), NOT pick() — rollDrop() already spends exactly the rng() draws
+// generateItem()/rollTier() need, and adding a real draw here for flavor
+// alone would shift the seeded stream for no balance reason. Seeded on the
+// item's own (already-rolled) name plus the hero's, so the same hero sees a
+// different line every time without costing anything. {item}/{Item} are the
+// lowercase- and capitalized-article itemPhrase(); {old} is the outgoing
+// item's bare name (no article — see the templates using "the {old}").
+const GEAR_FIRST_LINES = [
+  "{name} finds {item} and arms themselves with it.",
+  "{Item} turns up in the wreckage, and {name} isn't about to leave it behind.",
+  "{name} comes away from the day's work with {item} — small mercy, but a real one.",
+  "{Item} — {name} takes the find as a plain stroke of luck and keeps moving.",
+  "{name} adds {item} to what little they started with.",
+  "{name} claims {item} before anyone else even notices there's something to claim.",
+  "{Item} turns out to be worth the detour. {name} isn't complaining.",
+  "{name} pockets {item}, glad of one thing today that didn't have to be fought for.",
+  "{name} finds {item} half-buried and walks away better armed than they arrived.",
+  "{Item} — not much to look at, maybe, but {name} straps it on anyway.",
+];
+const GEAR_UPGRADE_LINES = [
+  "{name} finds {item} — it outclasses the {old} and takes its place.",
+  "{Item} turns out to be the better piece. The {old} doesn't get a say in the matter.",
+  "{name} weighs {item} against the {old} for about as long as it takes to decide. The {old} loses.",
+  "The {old} served well enough. {item} serves better, and {name} makes the swap without ceremony.",
+  "{name} finds {item}, and the {old} is retired on the spot.",
+  "{Item} is a clear step up from the {old}, and {name} doesn't waste time saying goodbye to it.",
+  "{name} trades up — {item} in, the {old} out, no regrets either way.",
+  "The {old} has done its work. {item} does more, and {name} makes the change without looking back.",
+  "{name} finds {item}, and just like that the {old} is yesterday's problem.",
+  "{Item} settles into place like it was always meant to replace the {old}.",
+];
+// Rarer phrasing for epic/legendary finds — already imp:2 (a bordered card in
+// the chronicle), so the language earns the extra weight.
+const GEAR_FIRST_LINES_RARE = [
+  "{name} finds {item}, and it feels like the road just tipped in their favor.",
+  "{Item} — {name} can hardly believe the find, and doesn't waste time putting it to use.",
+  "{name} arms themselves with {item}, and for the first time in a while the odds feel less lopsided.",
+];
+const GEAR_UPGRADE_LINES_RARE = [
+  "{name} finds {item} — the kind of find that doesn't happen twice in a lifetime — and the {old} is retired without a second thought.",
+  "{Item}. {name} actually stops for a moment before setting the {old} aside for good.",
+  "{name} finds {item}, and even the road seems to notice. The {old}'s work is finally done.",
+  "There's a weight to {item} that the {old} never had. {name} feels the difference before the next task even starts.",
+  "{Item} is the kind of thing songs get written about, if anyone's left to write them. {name} takes it, and the {old} steps down.",
+];
+
 function rollDrop(S){
   const h = S.hero;
   const d = derived(h, S.gear);
@@ -2894,10 +3556,14 @@ function rollDrop(S){
   const equipped = S.gear[item.slot];
   if (!equipped || item.score > equipped.score){
     equipItem(S, item);
-    const imp = (item.tier === "epic" || item.tier === "legendary") ? 2 : 1;
-    const text = equipped
-      ? `${h.name} finds ${itemPhrase(item)} — it outclasses the ${equipped.name} and takes its place.`
-      : `${h.name} finds ${itemPhrase(item)} and arms themselves with it.`;
+    const rare = (item.tier === "epic" || item.tier === "legendary");
+    const imp = rare ? 2 : 1;
+    const vars = {name: h.name, item: itemPhrase(item), Item: cap(itemPhrase(item)),
+                  old: equipped ? equipped.name : ""};
+    const pool = equipped
+      ? (rare ? GEAR_UPGRADE_LINES_RARE : GEAR_UPGRADE_LINES)
+      : (rare ? GEAR_FIRST_LINES_RARE : GEAR_FIRST_LINES);
+    const text = fillTemplate(hashPick(pool, h.name + "#" + item.name + "#" + item.slot), vars);
     logEvent(S, "gear", text, imp);
     return;
   }
@@ -2997,6 +3663,17 @@ function generateHeirloom(zoneN, grave){
   return item;
 }
 
+// heirloomRecoverer bookkeeping, shared by rollGraveDiscovery() (the normal
+// per-task find roll) and applyGraveSenseAtCreation() (the graveSense
+// achievement's guaranteed reveal) — both call this AFTER actually granting
+// an heirloom item, never before, so the count only ever reflects real finds.
+function noteHeirloomRecovered(S){
+  if (!S._meta) return;
+  S._meta.heirloomsRecovered = (S._meta.heirloomsRecovered || 0) + 1;
+  saveMeta();
+  if (S._meta.heirloomsRecovered >= 3) unlockAchievement(S._meta, "heirloomRecoverer", S);
+}
+
 function rollGraveDiscovery(S){
   if (!S._meta) return;                  // zero rng() draws when meta absent — simulate(n) harness
   const eligible = eligibleGraves(S);
@@ -3021,6 +3698,47 @@ function rollGraveDiscovery(S){
     if (upgrade) equipItem(S, item); else S.inventory.push(item);
     logEvent(S, "heirloom", fillTemplate(pick(GRAVE_HEIRLOOM_LINES),
       Object.assign({owner: item.owner, itemName: item.name}, graveVars(grave, S))), 2);
+    noteHeirloomRecovered(S);
+  }
+}
+
+// tenHeroesRest achievement reward (meta.unlocks.graveSense) — "new heroes
+// begin knowing where one of your fallen heroes lies." Called once from
+// createState(), guarded on S._meta first (same discipline as every other
+// grave function), so it costs simulate(n) zero extra rng() draws — the
+// unlock flag is never set on the null meta the harness always passes.
+// Deliberately NOT restricted to the hero's starting zone — foreknowledge
+// isn't bound to where the hero happens to be standing yet. Reuses the
+// SAME heirloom-recovery path rollGraveDiscovery() uses (generateHeirloom
+// re-scales to the finder's CURRENT zone, i.e. zone 1 here — see CLAUDE.md
+// "Graves and heirlooms," the whole point of the mechanic), so this is no
+// stronger than an ordinary early grave find, just guaranteed instead of a
+// per-task roll.
+function applyGraveSenseAtCreation(S){
+  const meta = S._meta;
+  if (!meta || !meta.unlocks || !meta.unlocks.graveSense) return;
+  if (!meta.graves || !meta.graves.length) return;
+  const eligible = meta.graves.filter(g => g.name !== S.hero.name);
+  if (!eligible.length) return;
+
+  const grave = pick(eligible);
+  S.hero.foundGraveIds = S.hero.foundGraveIds || [];
+  S.hero.foundGraveIds.push(grave.id);
+  const zoneName = (ZONES[grave.zone - 1] && ZONES[grave.zone - 1].name) || "a place not yet reached";
+  logEvent(S, "grave", fillTemplate(pick(GRAVE_SENSE_LINES),
+    Object.assign({zone: zoneName}, graveVars(grave, S))), 2);
+
+  if (grave.heirloom && !grave.heirloomRecovered && rng() < GRAVE_HEIRLOOM_CHANCE){
+    grave.heirloomRecovered = true;
+    saveMeta();
+    const item = generateHeirloom(S.world.zone, grave);
+    S.stats.itemsFound++;
+    const equipped = S.gear[item.slot];
+    const upgrade = !equipped || item.score > equipped.score;
+    if (upgrade) equipItem(S, item); else S.inventory.push(item);
+    logEvent(S, "heirloom", fillTemplate(pick(GRAVE_HEIRLOOM_LINES),
+      Object.assign({owner: item.owner, itemName: item.name}, graveVars(grave, S))), 2);
+    noteHeirloomRecovered(S);
   }
 }
 
@@ -3109,6 +3827,10 @@ function doMerchantTrip(S){
         spent += price;
         equipItem(S, commission);
         commissioned = commission;
+        if (S._meta && !S._meta.hasCommissioned){
+          S._meta.hasCommissioned = true;
+          unlockAchievement(S._meta, "commissioner", S);   // saves meta itself
+        }
       }
     }
   }
@@ -3144,7 +3866,7 @@ function doMerchantTrip(S){
   h.hp = Math.min(mMax, h.hp + mMax * BALANCE.merchantHeal);
   S.stats.merchantTrips = (S.stats.merchantTrips || 0) + 1;
   h.skillState = {};   // refresh once-per-cycle triggered skills (design doc §9 step 4)
-  logEvent(S, "merchant", merchantTripLine(h, soldCount, earned, bought, commissioned, blockedByPrice), 1);
+  logEvent(S, "merchant", merchantTripLine(h, soldCount, earned, bought, commissioned, blockedByPrice, S._meta, S.stats.merchantTrips), 1);
   // Debug-only hook for balance measurement (see CLAUDE.md testing notes) —
   // a no-op unless a test harness has set window._trackMerchant.
   if (typeof window !== "undefined" && window._trackMerchant)
@@ -3160,28 +3882,70 @@ const MERCHANT_REKIT_LINES = [
   "leaves the stall harder to kill than they walked in",
   "spends like they expect to need every bit of it",
   "walks out re-kitted, lighter of purse and heavier of gear",
+  "spends the whole cycle's earnings without a second thought about it",
+  "trades every spare coin for the chance to survive a little longer",
+  "walks out of the stall looking like a different hero went in",
+];
+// Bonus rekit variant, unlocked by the commissioner achievement
+// (meta.unlocks.merchantVeteran) — a nod to a player who's haggled this
+// exact stall before. Appended, never substituted, and only when meta is
+// present, so merchantTripLine()'s output for the harness (meta undefined)
+// is byte-identical to before this change.
+const MERCHANT_REKIT_VETERAN_LINES = [
+  "spends like someone who's haggled this exact stall before",
 ];
 const MERCHANT_PRICED_OUT_LINES = [
   "what's worth having tonight is priced past reach",
   "the good gear wants a deeper purse than this one",
   "counts the coin twice and still can't stretch to it",
+  "the merchant names a price that doesn't move, no matter how it's counted",
+  "walks the stall twice and can't make the numbers work",
+];
+// Opener/closer variety for the trip line itself — previously two fixed
+// clauses bookending every one of the ~15-18 merchant trips a run makes.
+// hashPick(), not pick() — merchantTripLine() runs inside the simulation
+// core (called from doMerchantTrip, called from completeTask) and has never
+// spent an rng() draw of its own; a real draw here would shift the seeded
+// stream. Seeded on the hero's name plus this trip's ordinal
+// (S.stats.merchantTrips, passed in as `tripN`), so consecutive trips by the
+// same hero don't repeat.
+const MERCHANT_OPENERS = [
+  "{name} makes for the merchant's stall",
+  "{name} ducks into the merchant's stall, glad of the pause",
+  "{name} spends the lull at the merchant's stall",
+  "{name} stops at the familiar stall, same as every cycle before this one",
+  "{name} makes the walk back to the merchant's stall",
+  "{name} takes the detour to the merchant's stall without needing to think about it",
+];
+const MERCHANT_CLOSERS = [
+  "Wounds close, breath comes easy again, and they turn back to the road.",
+  "The worst of it mends. They shoulder what's left and turn back to the road.",
+  "Whatever the stall couldn't fix, time and the walk back will have to.",
+  "Patched up as well as coin allows, they turn back toward whatever's next.",
+  "It isn't rest, not really, but it's close enough. They turn back to the road.",
 ];
 
-function merchantTripLine(h, soldCount, earned, bought, commissioned, blockedByPrice){
+function merchantTripLine(h, soldCount, earned, bought, commissioned, blockedByPrice, meta, tripN){
+  const rekitPool = (meta && meta.unlocks && meta.unlocks.merchantVeteran)
+    ? MERCHANT_REKIT_LINES.concat(MERCHANT_REKIT_VETERAN_LINES) : MERCHANT_REKIT_LINES;
   const soldPart = soldCount > 0
     ? `unloads ${soldCount} piece${soldCount === 1 ? "" : "s"} of salvage for ${earned} gold`
     : "finds nothing worth selling";
 
   let outcome = "";
-  if (bought.length > 1) outcome = `and ${pick(MERCHANT_REKIT_LINES)} — ${bought.length} pieces replaced`;
+  if (bought.length > 1) outcome = `and ${pick(rekitPool)} — ${bought.length} pieces replaced`;
   else if (bought.length === 1) outcome = `and walks out with ${itemPhrase(bought[0])}`;
   else if (blockedByPrice) outcome = `but ${pick(MERCHANT_PRICED_OUT_LINES)}`;
 
-  let text = `${h.name} makes for the merchant's stall — ${soldPart}${outcome ? " " + outcome : ""}. `;
+  const seed = h.name + "#merchant#" + (tripN == null ? 0 : tripN);
+  const opener = fillTemplate(hashPick(MERCHANT_OPENERS, seed + "#o"), {name: h.name});
+  const closer = hashPick(MERCHANT_CLOSERS, seed + "#c");
+
+  let text = `${opener} — ${soldPart}${outcome ? " " + outcome : ""}. `;
   if (commissioned) text += `${h.name} pays a hard premium to have ${itemPhrase(commissioned)} made to order. `;
-  // "they" rather than the name again — the line already opens with it, and
-  // there is no other actor in this clause for the pronoun to attach to.
-  text += `Wounds close, breath comes easy again, and they turn back to the road.`;
+  // "they" rather than the name again — the opener already establishes it,
+  // and there is no other actor in this clause for the pronoun to attach to.
+  text += closer;
   return text;
 }
 
@@ -3294,8 +4058,10 @@ function rollPeril(S){
     S.stats.perilsSurvived++;
     // Near-death is on the permanent-retention list, but only the crossing,
     // not every subsequent task spent under the threshold.
-    if (wasSafe && h.hp / d.maxHP < 0.20)
-      logEvent(S, "neardeath", `${h.name} is barely standing. HP critical.`, 1);
+    if (wasSafe && h.hp / d.maxHP < 0.20){
+      logEvent(S, "neardeath", nearDeathLine(S), 1);
+      noteNearDeathCrossing(S);
+    }
     return;
   }
 
@@ -3313,7 +4079,7 @@ function rollPeril(S){
   if (h.cheatDeathCharges > 0){
     h.cheatDeathCharges--;
     h.hp = 1;
-    logEvent(S, "cheatdeath", `${desc} — ${pick(CHEATDEATH_LINES).replace("{name}", h.name)}`, 2);
+    logEvent(S, "cheatdeath", `${desc} — ${pick(cheatDeathPool(S)).replace("{name}", h.name)}`, 2);
     S.stats.perilsSurvived++;
     return;
   }
@@ -3336,7 +4102,8 @@ function beginConfrontation(S){
   w.state = "CONFRONTATION";
   w.confrontation = {step: 0};
   w.taskProgressMs = 0;
-  logEvent(S, "confrontation", fillTemplate(pick(CONFRONTATION_ANNOUNCE), threadVars(S)), 2);
+  const base = fillTemplate(pick(confrontAnnouncePool(S)), threadVars(S));
+  logEvent(S, "confrontation", base + confrontationFlagLine(S), 2);
 }
 
 // One step of the confrontation: a scripted narrative beat (not a random
@@ -3370,6 +4137,17 @@ function completeConfrontationStep(S){
       saveMeta();   // counts 2, 4, 5... unlock nothing, so nothing else would flush them
       if (S._meta.ascensionCount === 1) unlockAchievement(S._meta, "ascendOnce", S);
       if (S._meta.ascensionCount === 3) unlockAchievement(S._meta, "ascendThrice", S);
+      // ascendAllLineages: which tier-1 lineage this ascension belongs to,
+      // via the shared LINEAGE_OF map (a hero who ascends before L25 stays
+      // novice/tier-1 and isn't forked yet, but the confrontation is gated
+      // on L50 so h.cls is always a real tier-2 class here).
+      const lineage = LINEAGE_OF[h.cls] || h.cls;
+      S._meta.ascendedLineages = S._meta.ascendedLineages || [];
+      if (!S._meta.ascendedLineages.includes(lineage)){
+        S._meta.ascendedLineages.push(lineage);
+        saveMeta();
+      }
+      if (S._meta.ascendedLineages.length >= 3) unlockAchievement(S._meta, "ascendAllLineages", S);
     }
     onHeroRunEnd(S);   // an ascended run's tasks count toward the lifetime tally too
   }
@@ -3413,7 +4191,7 @@ function rollConfrontationPeril(S){
   if (h.cheatDeathCharges > 0){
     h.cheatDeathCharges--;
     h.hp = 1;
-    logEvent(S, "cheatdeath", `${desc} — ${pick(CHEATDEATH_LINES).replace("{name}", h.name)}`, 2);
+    logEvent(S, "cheatdeath", `${desc} — ${pick(cheatDeathPool(S)).replace("{name}", h.name)}`, 2);
     S.stats.perilsSurvived++;
     return;
   }
@@ -3503,6 +4281,19 @@ function resolveChoice(S, optionKey){
     const dil = DILEMMAS[c.dilemmaKey];
     const opt = dil && dil.options[optionKey];
     if (opt) delayMs = opt.apply(S) || 0;
+    // allDilemmas: which of the five dilemma KEYS (not options) has been
+    // resolved at least once, across every hero. Same "save at the point of
+    // mutation" discipline as classesReached — don't rely on the achievement
+    // firing to flush it, or progress made toward it silently vanishes on reload.
+    if (S._meta){
+      S._meta.dilemmasResolved = S._meta.dilemmasResolved || [];
+      if (!S._meta.dilemmasResolved.includes(c.dilemmaKey)){
+        S._meta.dilemmasResolved.push(c.dilemmaKey);
+        saveMeta();
+      }
+      if (S._meta.dilemmasResolved.length >= Object.keys(DILEMMAS).length)
+        unlockAchievement(S._meta, "allDilemmas", S);
+    }
   }
   S.world.pendingChoice = null;
   finishChoice(S, delayMs);
@@ -3534,7 +4325,9 @@ let META = null;
 function defaultMeta(){
   return {version: META_VERSION, achievements:[], unlocks:{}, hall:[], heroesRun:0,
           lifetimeTasks:0, classesReached:[], ascensionCount:0, heroesLaidToRest:0,
-          graves:[], graveSeq:0};
+          graves:[], graveSeq:0,
+          dilemmasResolved:[], heirloomsRecovered:0, hasCommissioned:false,
+          nearDeathCrossings:0, racesPlayed:[], ascendedLineages:[]};
 }
 // Every new meta field needs both a default here AND a fallback below, same
 // discipline as the hero save's migrate() — a corrupted or pre-Phase-7
@@ -3559,6 +4352,19 @@ function migrateMeta(m){
   // grave on record, same as an old save with no achievements yet.
   if (!Array.isArray(m.graves)) m.graves = [];
   if (m.graveSeq === undefined) m.graveSeq = 0;
+  // v3 -> v4 (2026-08-07 achievement expansion). Six new counters — a
+  // pre-existing save just starts every one of them at zero/empty, same as
+  // any other never-earned achievement's tracked progress. The old
+  // unlocks.invSlotBonus (from a pre-expansion tenHeroesRest earn) is
+  // deliberately left alone — see CLAUDE.md "A Long List of Names": an
+  // already-earned reward isn't retroactively taken away, and invSlots()/
+  // hero.metaInvBonus still read it correctly for exactly that reason.
+  if (!Array.isArray(m.dilemmasResolved)) m.dilemmasResolved = [];
+  if (m.heirloomsRecovered === undefined) m.heirloomsRecovered = 0;
+  if (m.hasCommissioned === undefined) m.hasCommissioned = false;
+  if (m.nearDeathCrossings === undefined) m.nearDeathCrossings = 0;
+  if (!Array.isArray(m.racesPlayed)) m.racesPlayed = [];
+  if (!Array.isArray(m.ascendedLineages)) m.ascendedLineages = [];
   m.version = META_VERSION;
   return m;
 }
@@ -3615,7 +4421,7 @@ function migrate(s){
   // be fixed with an undefined/null check like the others below: it was
   // always present, just always wrong (stuck at 1) for anyone past Act I, so
   // this has to be gated on save version instead of field presence.
-  if (!s.world.thread) s.world.thread = rollThread();
+  if (!s.world.thread) s.world.thread = rollThread(META);
   if (s.version < 5) s.world.act = actForLevel(s.hero.level).n;
   if (s.world.confrontation === undefined) s.world.confrontation = null;
   if (s.world.diedInConfrontation === undefined) s.world.diedInConfrontation = false;
@@ -3635,6 +4441,14 @@ function migrate(s){
   // graves THIS hero has already found, so a save from before the feature
   // existed just starts with an empty list — nothing to migrate out of.
   if (!Array.isArray(s.hero.foundGraveIds)) s.hero.foundGraveIds = [];
+  // v8 -> v9 (2026-08-07 achievement expansion). Four new baked-at-creation
+  // meta perks, same pattern as metaDropBonus/metaInvBonus above — a save
+  // from before this pass just gets 0 (no perk), same as a hero who was
+  // created before the player had earned it.
+  if (s.hero.metaDropTierBump === undefined) s.hero.metaDropTierBump = 0;
+  if (s.hero.metaEvasionBonus === undefined) s.hero.metaEvasionBonus = 0;
+  if (s.hero.metaBuyDiscount === undefined) s.hero.metaBuyDiscount = 0;
+  if (s.hero.metaXpBonus === undefined) s.hero.metaXpBonus = 0;
   s.version = SAVE_VERSION;
   return s;
 }
@@ -3782,22 +4596,31 @@ function tryImportText(text){
 // The bottom-of-screen utility row ("very bottom", quiet, .btn.ghost, well
 // separated from gameplay controls). Shared by renderMain() and
 // renderCreation() so import works with or without a live hero.
+// Collapsible from the title, closed by default (Rob, 2026-08-07) — the
+// outer element IS the <details> (replacing the plain .card div), with the
+// title itself as <summary> so the whole heading row is the tap target,
+// same idiom as .ach-progress's "Progress" disclosure. No `open` attribute
+// means every render starts collapsed; the browser keeps it open across
+// re-renders within a session on its own (native <details> state), so a
+// mid-import view of this card doesn't slam shut under the player's thumb.
 function saveDataRow(){
   return `
-    <div class="card" style="margin-top:4px">
-      <h2>Save Data</h2>
-      <p class="tiny muted" style="margin:0 0 10px">Export saves the current hero and all lifetime
-        progress to a file. Import replaces both with a previously exported file.</p>
-      <button class="btn ghost" id="export-save" type="button">Export Save Data</button>
-      <label for="import-file">Import Save Data</label>
-      <input type="file" id="import-file" accept="application/json,.json">
-      <details style="margin-top:12px">
-        <summary class="tiny muted" style="cursor:pointer">Paste a save instead</summary>
-        <textarea id="import-paste" rows="4" placeholder="Paste exported save JSON here" style="margin-top:8px"></textarea>
-        <button class="btn ghost" id="import-paste-btn" type="button" style="margin-top:8px">Import Pasted Save</button>
-      </details>
-      <div id="import-error" class="tiny" style="margin-top:10px; min-height:1em; color:var(--blood)"></div>
-    </div>`;
+    <details class="card save-data" style="margin-top:4px">
+      <summary>Save Data</summary>
+      <div class="save-data-body">
+        <p class="tiny muted" style="margin:0 0 10px">Export saves the current hero and all lifetime
+          progress to a file. Import replaces both with a previously exported file.</p>
+        <button class="btn ghost" id="export-save" type="button">Export Save Data</button>
+        <label for="import-file">Import Save Data</label>
+        <input type="file" id="import-file" accept="application/json,.json">
+        <details style="margin-top:12px">
+          <summary class="tiny muted" style="cursor:pointer">Paste a save instead</summary>
+          <textarea id="import-paste" rows="4" placeholder="Paste exported save JSON here" style="margin-top:8px"></textarea>
+          <button class="btn ghost" id="import-paste-btn" type="button" style="margin-top:8px">Import Pasted Save</button>
+        </details>
+        <div id="import-error" class="tiny" style="margin-top:10px; min-height:1em; color:var(--blood)"></div>
+      </div>
+    </details>`;
 }
 function wireSaveDataRow(){
   const exportBtn = document.getElementById("export-save");
@@ -4123,7 +4946,15 @@ function renderCreation(){
     pendingSummary = null;
     S = createState(nameEl.value.trim().slice(0,18), chosen, META);
     META.heroesRun = (META.heroesRun || 0) + 1;
+    // allRacesPlayed / fiftyHeroesRun bookkeeping — render-layer, same as
+    // heroesRun above and the "Lay Them to Rest" handler, not the sim core,
+    // since this is purely a player-driven creation-screen action.
+    META.racesPlayed = META.racesPlayed || [];
+    if (!META.racesPlayed.includes(chosen)) META.racesPlayed.push(chosen);
     saveMeta();
+    if (Object.keys(RACES).every(r => META.racesPlayed.includes(r)))
+      unlockAchievement(META, "allRacesPlayed", null);
+    if (META.heroesRun >= 50) unlockAchievement(META, "fiftyHeroesRun", null);
     saveGame();
     render();
     startLiveLoop();
@@ -4455,6 +5286,25 @@ function achRareSetBody(){
   }).join("");
   return `<div class="ach-chiprow">${chips}</div>` + achBarRow("Rare-or-better slots", have, 6);
 }
+// allRacesPlayed — same chip idiom as achClassesBody, flat (one lineage
+// group, not several) since there's no grouping structure for races.
+function achRacesBody(racesPlayed){
+  const chips = Object.keys(RACES).map(rk => {
+    const got = racesPlayed.includes(rk);
+    const mark = got ? `<span class="ach-check" aria-hidden="true">&#10003;</span> ` : "";
+    return `<span class="chip${got ? " reached" : ""}">${mark}${esc(RACES[rk].name)}</span>`;
+  }).join("");
+  return `<div class="ach-chiprow">${chips}</div>` + achBarRow("Races played", racesPlayed.length, Object.keys(RACES).length);
+}
+// ascendAllLineages — one chip per tier-1 lineage.
+function achLineagesBody(ascendedLineages){
+  const chips = Object.keys(ADVANCED_OF).map(t1 => {
+    const got = ascendedLineages.includes(t1);
+    const mark = got ? `<span class="ach-check" aria-hidden="true">&#10003;</span> ` : "";
+    return `<span class="chip${got ? " reached" : ""}">${mark}${esc(CLASSES[t1].name)}</span>`;
+  }).join("");
+  return `<div class="ach-chiprow">${chips}</div>` + achBarRow("Lineages ascended", ascendedLineages.length, Object.keys(ADVANCED_OF).length);
+}
 function achievementProgressBody(key){
   const m = META || {};
   switch(key){
@@ -4468,6 +5318,18 @@ function achievementProgressBody(key){
       return achClassesBody(Array.isArray(m.classesReached) ? m.classesReached : []);
     case "fullRareSet":
       return achRareSetBody();
+    case "allDilemmas":
+      return achBarRow("Dilemma types resolved", Array.isArray(m.dilemmasResolved) ? m.dilemmasResolved.length : 0, Object.keys(DILEMMAS).length);
+    case "heirloomRecoverer":
+      return achBarRow("Heirlooms recovered", typeof m.heirloomsRecovered === "number" ? m.heirloomsRecovered : 0, 3);
+    case "nearDeathVeteran":
+      return achBarRow("Near-death crossings survived", typeof m.nearDeathCrossings === "number" ? m.nearDeathCrossings : 0, 15);
+    case "fiftyHeroesRun":
+      return achBarRow("Heroes sent out", typeof m.heroesRun === "number" ? m.heroesRun : 0, 50);
+    case "allRacesPlayed":
+      return achRacesBody(Array.isArray(m.racesPlayed) ? m.racesPlayed : []);
+    case "ascendAllLineages":
+      return achLineagesBody(Array.isArray(m.ascendedLineages) ? m.ascendedLineages : []);
     default:
       return "";
   }
@@ -4949,12 +5811,8 @@ function simulate(n, opts){
   // — that broke silently once L25 forks everyone into a tier-2 class, so no
   // survivor's final cls is ever "soldier"/"scout"/"apprentice" anymore.
   // Group by tier-1 lineage instead (a hero who dies before L25 still counts
-  // under its own class, unforked).
-  const LINEAGE_OF = {};
-  for (const t1 of Object.keys(ADVANCED_OF)){
-    LINEAGE_OF[t1] = t1;
-    for (const t2 of ADVANCED_OF[t1]) LINEAGE_OF[t2] = t1;
-  }
+  // under its own class, unforked). LINEAGE_OF is now a top-level const
+  // (shared with achievement bookkeeping) rather than rebuilt here.
   // NOTE (Phase 6): r.hours is now TOTAL elapsed time when the run finally
   // stopped (death or ascension), since reaching level 50 no longer halts
   // simulateOne's loop. For "hours to 50" specifically, use the milestone
@@ -5071,6 +5929,13 @@ window.GQ = {
   GRAVE_MAX, trimGraves, GRAVE_FIND_CHANCE, GRAVE_HEIRLOOM_CHANCE,
   GRAVE_EPITAPHS, GRAVE_HEIRLOOM_LINES, bestGearItem, eligibleGraves,
   graveVars, generateHeirloom, rollGraveDiscovery, hallGraveLine,
+  // Achievement expansion + tenHeroesRest/ascendThrice reward fixes (2026-08-07).
+  LINEAGE_OF, ANTAGONIST_TYPE_KEYS_BASE, achievementStatMods, legacyCallbackLine,
+  GRAVE_SENSE_LINES, applyGraveSenseAtCreation, noteHeirloomRecovered, noteNearDeathCrossing,
+  zoneMinorPool, ZONE_MINOR_VETERAN, cheatDeathPool, CHEATDEATH_VETERAN_LINES,
+  confrontAnnouncePool, CONFRONTATION_ANNOUNCE_VETERAN, merchantTripLine,
+  MERCHANT_REKIT_VETERAN_LINES, NAME_WAYFARER, NAME_BLOODMARKED, NAME_GRAVEN,
+  NAME_SCARRED, NAME_THREEFOLD,
   // Save data import/export (2026-08-05 brief) — render/persistence layer only.
   EXPORT_MARKER, buildExportPayload, exportGameData, validateImportPayload,
   applyImportPayload, tryImportText, renderImportConfirm,
