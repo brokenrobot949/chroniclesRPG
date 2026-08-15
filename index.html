@@ -4903,7 +4903,7 @@ function renderCreation(){
       <p class="muted tiny">You choose their name and their blood. After that fate will determine their path.</p>
       <label for="hname">Name</label>
       <div style="display:flex; gap:8px">
-        <input type="text" id="hname" maxlength="18" autocomplete="off" spellcheck="false" style="flex:1; min-width:0">
+        <input type="text" id="hname" maxlength="24" autocomplete="off" spellcheck="false" style="flex:1; min-width:0">
         <button class="btn ghost" id="rollname" type="button" style="width:auto; padding:0 14px">Roll</button>
       </div>
       <label>Race</label>
@@ -4944,7 +4944,7 @@ function renderCreation(){
     // never gets dismissed, because the epilogue screen replaces the tab view.
     // Without this, a brand-new hero opens on the dead one's overnight recap.
     pendingSummary = null;
-    S = createState(nameEl.value.trim().slice(0,18), chosen, META);
+    S = createState(nameEl.value.trim().slice(0,24), chosen, META);
     META.heroesRun = (META.heroesRun || 0) + 1;
     // allRacesPlayed / fiftyHeroesRun bookkeeping — render-layer, same as
     // heroesRun above and the "Lay Them to Rest" handler, not the sim core,
@@ -5203,10 +5203,51 @@ function retireHero(){
 
 // Hall of Legends — every hero who has left the road, one way or another.
 // The one place a player sees their whole history (design doc's keepsake
-// screen); newest first, capped at HALL_MAX so localStorage can't grow
-// without bound over a long-lived player.
+// screen); capped at HALL_MAX so localStorage can't grow without bound over
+// a long-lived player. Sort/status-filter selection (item 1, 2026-08-14
+// brief) lives in module-level state, same idiom as chronicleFilters —
+// render-only, never persisted, never touching META itself.
+const HALL_SORTS = [
+  {key:"newest", label:"Newest"},
+  {key:"oldest", label:"Oldest"},
+  {key:"level",  label:"Level"},
+  {key:"hours",  label:"Hours Lived"},
+  {key:"name",   label:"Name"},
+];
+let hallSort = "newest";
+const HALL_STATUSES = ["Fallen", "Legend", "Retired"];
+let hallStatusFilter = new Set(HALL_STATUSES);   // all on by default — same as the old unfiltered list
+
+// Hall entries span several schema versions and are NOT guaranteed to carry
+// `at`, `hoursLived`, `classPath` or `graveId` (older records predate those
+// fields). Missing `at` falls back to 0 (chronologically "oldest possible" —
+// `at` was only added once timestamps existed, so an entry that lacks it IS
+// the oldest kind of record); missing `hoursLived`/`level` fall back to 0
+// (numerically smallest, so incomplete data sinks rather than floating to
+// the top). None of that can throw: every accessor here is `e.field || 0`
+// or a String() coercion, never a direct property chain.
+// Base list is newest-push-first (mirrors the old always-reverse() behavior)
+// so that Array.sort's stability keeps ties — e.g. a pile of legacy entries
+// that all fall back to at:0 — in newest-first order under every sort mode,
+// rather than shuffling on each render.
+function hallFilterAndSort(hall){
+  const base = hall.slice().reverse();
+  const filtered = hallStatusFilter.size === HALL_STATUSES.length
+    ? base   // all three selected — pass through so unrecognized/missing status still shows
+    : base.filter(e => hallStatusFilter.has(e.status));
+  const list = filtered.slice();
+  switch (hallSort){
+    case "oldest": list.sort((a, b) => (a.at || 0) - (b.at || 0)); break;
+    case "level":  list.sort((a, b) => (b.level || 0) - (a.level || 0)); break;
+    case "hours":  list.sort((a, b) => (b.hoursLived || 0) - (a.hoursLived || 0)); break;
+    case "name":   list.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))); break;
+    case "newest":
+    default:       list.sort((a, b) => (b.at || 0) - (a.at || 0)); break;
+  }
+  return list;
+}
 function renderHall(){
-  const entries = META.hall.slice().reverse();
+  const entries = hallFilterAndSort(META.hall);
   const rows = entries.length
     ? entries.map(hallRow).join("")
     : `<div class="empty">No one has yet returned from the road, one way or another.</div>`;
@@ -5214,10 +5255,24 @@ function renderHall(){
     <div class="card">
       <h2>Hall of Legends</h2>
       <p class="muted tiny">Every hero who has left the road — fallen, ascended, or retired.</p>
+      <p class="tiny muted" style="margin:12px 0 4px">Sort by</p>
+      <div class="chipbar" style="margin-bottom:4px">${HALL_SORTS.map(s => `
+        <button class="chip" type="button" data-hallsort="${s.key}" aria-pressed="${hallSort === s.key}">${esc(s.label)}</button>`).join("")}</div>
+      <p class="tiny muted" style="margin:8px 0 4px">Status</p>
+      <div class="chipbar" style="margin-bottom:0">${HALL_STATUSES.map(st => `
+        <button class="chip" type="button" data-hallstatus="${st}" aria-pressed="${hallStatusFilter.has(st)}">${esc(st)}</button>`).join("")}</div>
     </div>
     <div class="card">${rows}</div>
     <button class="btn ghost" id="hall-back">Back</button>`;
   document.getElementById("hall-back").addEventListener("click", () => { metaView = null; render(); });
+  app.querySelectorAll("[data-hallsort]").forEach(b => b.addEventListener("click", () => {
+    hallSort = b.dataset.hallsort; render();
+  }));
+  app.querySelectorAll("[data-hallstatus]").forEach(b => b.addEventListener("click", () => {
+    const st = b.dataset.hallstatus;
+    if (hallStatusFilter.has(st)) hallStatusFilter.delete(st); else hallStatusFilter.add(st);
+    render();
+  }));
 }
 // Grave/heirloom status line (item 4 of the 2026-08-03 brief) — pre-existing
 // Fallen entries predate grave-tracking and simply have no graveId, so they
@@ -5237,10 +5292,11 @@ function hallRow(e){
     ? e.classPath.join(" &rarr; ")
     : esc(CLASSES[e.cls] ? CLASSES[e.cls].name : e.cls);
   const zoneName = ZONES[e.zone - 1] ? ZONES[e.zone - 1].name : "the road";
+  const hours = typeof e.hoursLived === "number" ? e.hoursLived : 0;
   return `<div class="gearslot">
-      <b>${esc(e.name)}</b>
-      <div class="tiny muted">${esc(RACES[e.race] ? RACES[e.race].name : e.race)} &middot; ${path} &middot; Level ${e.level}</div>
-      <div class="tiny" style="margin-top:2px">${esc(e.hoursLived)}h lived &middot; last in ${esc(zoneName)}</div>
+      <b>${esc(e.name || "Unknown")}</b>
+      <div class="tiny muted">${esc(RACES[e.race] ? RACES[e.race].name : e.race)} &middot; ${path} &middot; Level ${e.level || 0}</div>
+      <div class="tiny" style="margin-top:2px">${esc(hours)}h lived &middot; last in ${esc(zoneName)}</div>
       <div class="tiny" style="margin-top:2px; color:${statusColor}">${esc(e.status)}${e.cause ? " &middot; " + esc(e.cause) : ""}</div>
       ${hallGraveLine(e)}
     </div>`;
@@ -5396,7 +5452,7 @@ function renderMain(){
         <span></span></div>
       <div class="tiny muted" id="doing" style="margin-top:2px">${esc(doing)}</div>
       <div class="footrow">
-        <span><span class="zonedot">&#9679;</span> ${esc(z.name)}</span>
+        <span><span class="zonedot">&#9679;</span> ${esc(z.name)} &middot; Chapter ${ZONE_ACT_LABEL[w.zone-1]}</span>
         <span class="gold" id="goldtext">${fmt(h.gold)} gold</span>
       </div>
     </div>
@@ -5636,6 +5692,7 @@ function tabBody(){
         <div>Gold &middot; &times;${d.goldMult.toFixed(2)}</div>
         <div>Evasion &middot; ${(d.evasion*100).toFixed(1)}%</div>
         <div>Peril frequency &middot; &times;${d.perilMult.toFixed(2)}</div>
+        <div>Damage mitigation &middot; -${(d.mitigation*100).toFixed(1)}%</div>
         <div>Regeneration &middot; ${d.regenPerTask.toFixed(1)} HP per task</div>
       </div>
       <div class="effects" style="border-top:1px solid var(--line); padding-top:10px">
